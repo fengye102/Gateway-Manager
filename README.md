@@ -1,5 +1,11 @@
 # 网关管家 · 桌面版（pojiagw v2.0.0）
 
+[![ci](https://github.com/fengye102/Gateway-Manager/actions/workflows/ci.yml/badge.svg)](https://github.com/fengye102/Gateway-Manager/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/fengye102/Gateway-Manager?color=blue)](https://github.com/fengye102/Gateway-Manager/releases/latest)
+[![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![go](https://img.shields.io/badge/go-1.21%2B-00ADD8)](go.mod)
+
+
 把逆向 **网关管家 3.4.10（dev.pojia2api）** 得到的协议语义，重实现成一份 **Windows / Linux / macOS 通用** 的本机网关：
 
 - 单文件二进制，纯 Go 标准库，**零第三方依赖**
