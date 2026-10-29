@@ -179,6 +179,17 @@ const adminIndexHTML = `
         <th style="width:80px">权重</th><th>模型</th><th style="width:150px">操作</th>
       </tr></thead><tbody></tbody></table>
       <div id="channelOut" class="panel mono" style="display:none;margin-top:12px"></div>
+
+      <div id="loginPanel" class="panel" style="display:none;margin-top:12px">
+        <div class="row">
+          <b id="loginTitle">网页登录</b>
+          <span class="muted" id="loginHint">已打开浏览器，请在弹出的窗口里完成登录</span>
+          <span style="flex:1"></span>
+          <button class="primary" id="loginSave">抓到凭证，保存</button>
+          <button id="loginCancel">取消</button>
+        </div>
+        <div class="mono" id="loginStatus"></div>
+      </div>
     </div>
   </section>
 
@@ -967,11 +978,15 @@ function renderChannels(){
       '<td>' + badge + '</td>' +
       '<td class="mono muted">' + esc(p.base_url + p.chat_path) + '</td>' +
       '<td class="muted">' + esc(p.name + ' · ' + (p.notes || '')) + '</td>' +
-      '<td><button data-add-channel="' + esc(p.id) + '">加入</button></td>' +
+      '<td><button class="primary" data-login-channel="' + esc(p.id) + '">网页登录</button> ' +
+      '<button data-add-channel="' + esc(p.id) + '">粘贴</button></td>' +
       '</tr>';
   }).join('');
   pbody.querySelectorAll('button[data-add-channel]').forEach(function(b){
     b.addEventListener('click', function(){ addChannel(b.dataset.addChannel); });
+  });
+  pbody.querySelectorAll('button[data-login-channel]').forEach(function(b){
+    b.addEventListener('click', function(){ startChannelLogin(b.dataset.loginChannel); });
   });
 
   var cbody = document.getElementById('channelTable').querySelector('tbody');
@@ -996,6 +1011,60 @@ function renderChannels(){
     b.addEventListener('click', function(){ removeChannel(b.dataset.delChannel); });
   });
 }
+var loginState = { id: null, timer: null, tokenKey: '' };
+function startChannelLogin(presetId){
+  post('channels/login/start', { preset: presetId }).then(function(r){
+    if (!r.ok) { alert('打开登录页失败：' + JSON.stringify(r.body)); return; }
+    loginState.id = r.body.id;
+    document.getElementById('loginPanel').style.display = 'block';
+    document.getElementById('loginTitle').textContent = '网页登录：' + presetId;
+    document.getElementById('loginHint').textContent = '已用 ' + (r.body.browser || '浏览器') + ' 打开登录页，登录完成后这里会自动显示抓到的 cookie';
+    document.getElementById('loginStatus').textContent = '等待登录 ...';
+    if (loginState.timer) clearInterval(loginState.timer);
+    loginState.timer = setInterval(pollChannelLogin, 1500);
+    pollChannelLogin();
+  });
+}
+function pollChannelLogin(){
+  if (!loginState.id) { return; }
+  api('channels/login/status?id=' + encodeURIComponent(loginState.id)).then(function(r){
+    var el = document.getElementById('loginStatus');
+    if (!r.ok) { return; }
+    var d = r.body || {};
+    if (!d.active) { el.textContent = '登录会话已结束'; return; }
+    if (d.error) { el.textContent = '读取 cookie 失败：' + d.error; return; }
+    loginState.tokenKey = d.token_key || '';
+    var parts = [];
+    if (d.cookie_count) { parts.push('cookie ' + d.cookie_count + ' 个（' + (d.cookie_names || []).join(', ') + '）'); }
+    if (d.storage_keys && d.storage_keys.length) { parts.push('页面存储 ' + d.storage_keys.length + ' 项'); }
+    if (d.token_key) { parts.push('将用 ' + d.token_key + ' 作为凭证 ' + (d.token_key_mask || '')); }
+    el.textContent = (d.ready ? '已抓到凭证：' : '还没抓到凭证，请确认已在浏览器里登录：') + (parts.join(' · ') || '等待中');
+  });
+}
+document.getElementById('loginSave').addEventListener('click', function(){
+  if (!loginState.id) { return; }
+  post('channels/login/finish', { id: loginState.id, token_key: loginState.tokenKey || '' }).then(function(r){
+    if (r.ok) {
+      document.getElementById('loginStatus').textContent = '已保存凭证（' + (r.body.token_kind || 'cookie') + '），渠道 ' + r.body.id + ' 已启用';
+      stopChannelLogin();
+      loadChannels(); load();
+    } else {
+      alert('保存失败：' + JSON.stringify(r.body));
+    }
+  });
+});
+document.getElementById('loginCancel').addEventListener('click', function(){
+  if (loginState.id) {
+    fetch('/admin/api/channels/login/cancel?id=' + encodeURIComponent(loginState.id), { method: 'POST', headers: headers() });
+  }
+  stopChannelLogin();
+  document.getElementById('loginStatus').textContent = '已取消';
+});
+function stopChannelLogin(){
+  if (loginState.timer) { clearInterval(loginState.timer); loginState.timer = null; }
+  loginState.id = null;
+}
+
 function addChannel(presetId){
   var token = prompt('粘贴该渠道的凭证（token / cookie；匿名渠道填 public）', 'public');
   if (token === null) { return; }

@@ -17,10 +17,13 @@ type Server struct {
 	store  *Store
 	mu     sync.RWMutex
 	client *http.Client
+
+	loginMu sync.Mutex
+	logins  map[string]*loginSession
 }
 
 func NewServer(st *Store) *Server {
-	s := &Server{store: st}
+	s := &Server{store: st, logins: map[string]*loginSession{}}
 	s.refreshClient()
 	return s
 }

@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -549,6 +552,200 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 			"url":        target,
 			"body":       truncateForReport(string(body), 400),
 		})
+
+	case "channels/login/start":
+		var payload struct {
+			Preset string `json:"preset"`
+			ID     string `json:"id"`
+		}
+		if err := s.readJSONBody(r, &payload); err != nil {
+			proxyError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		preset, ok := findPreset(payload.Preset)
+		if !ok {
+			proxyError(w, http.StatusBadRequest, "未知渠道模板："+payload.Preset)
+			return
+		}
+		id := strings.TrimSpace(payload.ID)
+		if id == "" {
+			id = preset.ID
+		}
+		profileRoot := filepath.Join(os.TempDir(), "gateway-manager-login")
+		session, err := newLoginSession(id, preset, profileRoot)
+		if err != nil {
+			proxyError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		s.loginMu.Lock()
+		if old := s.logins[id]; old != nil {
+			old.closeSession()
+		}
+		s.logins[id] = session
+		s.loginMu.Unlock()
+		s.store.Info("已打开 %s 的登录页：%s（浏览器 %s）", preset.Name, preset.LoginURL, filepath.Base(session.Browser))
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": true, "id": id, "preset": preset.ID,
+			"login_url": preset.LoginURL, "browser": session.Browser,
+			"port": session.Port,
+		})
+
+	case "channels/login/status":
+		id := strings.TrimSpace(r.URL.Query().Get("id"))
+		if id == "" {
+			proxyError(w, http.StatusBadRequest, "缺少 id")
+			return
+		}
+		s.loginMu.Lock()
+		session := s.logins[id]
+		s.loginMu.Unlock()
+		if session == nil {
+			writeJSON(w, http.StatusOK, map[string]any{"active": false})
+			return
+		}
+		preset, _ := findPreset(session.Preset)
+		cookies, err := session.cookiesForPreset(preset)
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"active": true, "error": err.Error()})
+			return
+		}
+		token := cookiesToToken(cookies)
+		names := make([]string, 0, len(cookies))
+		for _, c := range cookies {
+			names = append(names, c.Name)
+		}
+		storageKeys := []string{}
+		storageCandidate := ""
+		storageCandidateKey := ""
+		if storage, err := session.storageSnapshot(preset); err == nil {
+			for k, v := range storage {
+				if strings.TrimSpace(v) != "" {
+					storageKeys = append(storageKeys, k)
+				}
+			}
+			sort.Strings(storageKeys)
+			storageCandidateKey, storageCandidate = pickTokenFromStorage(storage)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"active":         true,
+			"login_url":      session.LoginURL,
+			"browser":        filepath.Base(session.Browser),
+			"cookie_count":   len(cookies),
+			"cookie_names":   names,
+			"token_masked":   maskKey(token),
+			"storage_keys":   storageKeys,
+			"token_key":      storageCandidateKey,
+			"token_key_mask": maskKey(storageCandidate),
+			"ready":          len(cookies) > 0 || storageCandidate != "",
+		})
+
+	case "channels/login/finish":
+		var payload struct {
+			ID       string `json:"id"`
+			Preset   string `json:"preset"`
+			Model    string `json:"model"`
+			TokenKey string `json:"token_key"`
+			Enabled  *bool  `json:"enabled"`
+		}
+		if err := s.readJSONBody(r, &payload); err != nil {
+			proxyError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		id := strings.TrimSpace(payload.ID)
+		s.loginMu.Lock()
+		session := s.logins[id]
+		s.loginMu.Unlock()
+		if session == nil {
+			proxyError(w, http.StatusNotFound, "登录会话不存在或已结束："+id)
+			return
+		}
+		preset, ok := findPreset(session.Preset)
+		if !ok {
+			proxyError(w, http.StatusBadRequest, "未知渠道模板")
+			return
+		}
+		cookies, err := session.cookiesForPreset(preset)
+		if err != nil {
+			proxyError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		token := cookiesToToken(cookies)
+		tokenKind := "cookie"
+		if pk := strings.TrimSpace(payload.TokenKey); pk != "" {
+			storage, err := session.storageSnapshot(preset)
+			if err != nil {
+				proxyError(w, http.StatusBadRequest, "读取页面存储失败："+err.Error())
+				return
+			}
+			if v := strings.TrimSpace(storage[pk]); v != "" {
+				token = v
+				tokenKind = pk
+			}
+		}
+		if token == "" {
+			if key, val := func() (string, string) {
+				storage, err := session.storageSnapshot(preset)
+				if err != nil {
+					return "", ""
+				}
+				return pickTokenFromStorage(storage)
+			}(); val != "" {
+				token = val
+				tokenKind = key
+				s.store.Info("未指定 token 键，自动选用 %s", key)
+			}
+		}
+		if token == "" {
+			proxyError(w, http.StatusBadRequest, "还没抓到 cookie 或 token，请先在打开的浏览器里完成登录")
+			return
+		}
+		cfg := s.store.Config()
+		next := cloneConfig(cfg)
+		enabled := true
+		if payload.Enabled != nil {
+			enabled = *payload.Enabled
+		}
+		found := false
+		for i := range next.Channels {
+			if next.Channels[i].ID == id {
+				next.Channels[i].Preset = preset.ID
+				next.Channels[i].Token = token
+				next.Channels[i].Enabled = enabled
+				found = true
+			}
+		}
+		if !found {
+			next.Channels = append(next.Channels, Channel{
+				ID: id, Preset: preset.ID, Name: preset.Name, Token: token,
+				Enabled: enabled, Headers: map[string]string{},
+			})
+		}
+		s.autoSnapshot("before-channel-login")
+		if err := s.saveConfigAndReload(next); err != nil {
+			proxyError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		session.closeSession()
+		s.loginMu.Lock()
+		delete(s.logins, id)
+		s.loginMu.Unlock()
+		s.store.Info("网页登录成功：渠道 %s 已保存凭证（%d 个 cookie）", id, len(cookies))
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": true, "id": id, "upstream_id": "ch-" + id,
+			"cookie_count": len(cookies), "token_masked": maskKey(token),
+			"token_kind": tokenKind,
+		})
+
+	case "channels/login/cancel":
+		id := strings.TrimSpace(r.URL.Query().Get("id"))
+		s.loginMu.Lock()
+		session := s.logins[id]
+		delete(s.logins, id)
+		s.loginMu.Unlock()
+		if session != nil {
+			session.closeSession()
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 
 	case "experiments":
 		cfg := s.store.Config()

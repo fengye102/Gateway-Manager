@@ -656,6 +656,19 @@ docker compose up -d     # gateway-manager + Prometheus + Grafana 一起起来
 | `meoo` | 阿里 秒悟 Meoo | `meoo.com/api/v1/...` | Cookie | ⚠️ 待适配 |
 | `wenxin` | 百度 文心 | `chat.baidu.com/aichat/api/conversation` | Cookie | ⚠️ 待适配 |
 
+### 网页登录（推荐）
+
+不用手动扒 cookie：点「网页登录」，工具会用本机 Chrome / Edge 打开厂商登录页（独立 profile，不影响你自己的浏览器），登录完成后自动把该域名的 cookie 与页面存储抓回来，一键保存成渠道凭证。
+
+```
+控制台「渠道」→ 选模板 → 网页登录 → 在弹出的浏览器里登录 → 面板显示「已抓到凭证」→ 保存
+```
+
+- 原理：以 `--remote-debugging-port` 启动 Chrome/Edge，通过 DevTools 协议读取 `Storage.getCookies` 与页面 `localStorage/sessionStorage`（纯标准库实现的 WebSocket 客户端，无额外依赖）
+- 凭证优先级：指定 `token_key`（页面存储里的键）→ 自动挑最像 token 的键 → 都没有才用 cookie 串
+- 需要本机有 Chrome / Edge / Chromium；没有时会明确提示「改用手动粘贴」
+- 接口：`POST /admin/api/channels/login/start`、`GET /admin/api/channels/login/status`、`POST /admin/api/channels/login/finish`、`POST /admin/api/channels/login/cancel`
+
 ### 用法
 
 1. 控制台「渠道」页 → 选一个模板点「加入」→ 粘贴凭证（token / cookie；`opencode-zen` 填 `public`）

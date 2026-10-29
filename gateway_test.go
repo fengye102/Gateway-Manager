@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"crypto/sha1"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -2417,5 +2421,136 @@ func TestChannelCRUD(t *testing.T) {
 	}
 	if len(store.Config().Channels) != 0 {
 		t.Fatalf("渠道未删除: %+v", store.Config().Channels)
+	}
+}
+
+func TestChannelLoginPresetsHaveLoginURL(t *testing.T) {
+	for _, p := range builtinChannelPresets() {
+		if !strings.HasPrefix(p.LoginURL, "https://") {
+			t.Fatalf("渠道 %s 缺少 https 登录页：%q", p.ID, p.LoginURL)
+		}
+	}
+}
+
+func TestWebSocketFramingRoundTrip(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("监听失败: %v", err)
+	}
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		br := bufio.NewReader(conn)
+		key := ""
+		for {
+			line, err := br.ReadString('\n')
+			if err != nil {
+				return
+			}
+			line = strings.TrimRight(line, "\r\n")
+			if line == "" {
+				break
+			}
+			if strings.HasPrefix(strings.ToLower(line), "sec-websocket-key:") {
+				key = strings.TrimSpace(line[len("sec-websocket-key:"):])
+			}
+		}
+		h := sha1.Sum([]byte(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
+		accept := base64.StdEncoding.EncodeToString(h[:])
+		fmt.Fprintf(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", accept)
+
+		// 读一帧（客户端带 mask），原样回写（服务端不带 mask）
+		head := make([]byte, 2)
+		if _, err := io.ReadFull(br, head); err != nil {
+			return
+		}
+		n := int(head[1] & 0x7f)
+		if n == 126 {
+			ext := make([]byte, 2)
+			_, _ = io.ReadFull(br, ext)
+			n = int(ext[0])<<8 | int(ext[1])
+		}
+		mask := make([]byte, 4)
+		_, _ = io.ReadFull(br, mask)
+		payload := make([]byte, n)
+		_, _ = io.ReadFull(br, payload)
+		for i := range payload {
+			payload[i] ^= mask[i%4]
+		}
+		frame := []byte{0x81, byte(len(payload))}
+		frame = append(frame, payload...)
+		_, _ = conn.Write(frame)
+	}()
+
+	ws, err := dialWS(fmt.Sprintf("ws://%s/cdp", ln.Addr().String()))
+	if err != nil {
+		t.Fatalf("WS 连接失败: %v", err)
+	}
+	defer ws.close()
+
+	msg := `{"id":1,"method":"Browser.getVersion"}`
+	if err := ws.writeText([]byte(msg)); err != nil {
+		t.Fatalf("发送失败: %v", err)
+	}
+	got, err := ws.readMessage()
+	if err != nil {
+		t.Fatalf("接收失败: %v", err)
+	}
+	if string(got) != msg {
+		t.Fatalf("回显不一致: %q", string(got))
+	}
+}
+
+func TestCookieHelpers(t *testing.T) {
+	cookies := []cdpCookie{
+		{Name: "sessionid", Value: "abc", Domain: ".chat.deepseek.com"},
+		{Name: "cf_clearance", Value: "xyz", Domain: "chat.deepseek.com"},
+		{Name: "other", Value: "nope", Domain: "example.com"},
+	}
+	// 域名过滤
+	host := hostOf("https://chat.deepseek.com/api/v0/chat/completion")
+	if host != "chat.deepseek.com" {
+		t.Fatalf("hostOf 解析错误: %q", host)
+	}
+	kept := make([]cdpCookie, 0, len(cookies))
+	for _, c := range cookies {
+		d := strings.TrimPrefix(strings.ToLower(c.Domain), ".")
+		if strings.HasSuffix(host, d) || strings.HasSuffix(d, host) {
+			kept = append(kept, c)
+		}
+	}
+	if len(kept) != 2 {
+		t.Fatalf("域名过滤错误: %+v", kept)
+	}
+	token := cookiesToToken(kept)
+	if token != "sessionid=abc; cf_clearance=xyz" {
+		t.Fatalf("cookie 拼接错误: %q", token)
+	}
+	if hostOf("http://www.workbuddy.ai/x") != "workbuddy.ai" {
+		t.Fatalf("hostOf 未去掉 www")
+	}
+}
+
+func TestChannelLoginWithoutBrowser(t *testing.T) {
+	orig := findBrowserFunc
+	findBrowserFunc = func() (string, bool) { return "", false }
+	defer func() { findBrowserFunc = orig }()
+
+	store := NewStore(DefaultConfig(), "")
+	gw := httptest.NewServer(NewServer(store).Handler())
+	defer gw.Close()
+
+	payload, _ := json.Marshal(map[string]string{"preset": "deepseek-web"})
+	resp, body := postJSON(t, gw.URL+"/admin/api/channels/login/start", string(payload), nil)
+	if resp.StatusCode != 400 {
+		t.Fatalf("没有浏览器时应 400，得到 %d: %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, "未找到 Chrome") {
+		t.Fatalf("错误提示不友好: %s", body)
 	}
 }

@@ -120,6 +120,17 @@ original app's network layer). Fill in a credential and it becomes an upstream (
 | `xunfei-loomy` | iFlytek Loomy | query `token` | ✅ OpenAI-compatible |
 | `deepseek-web`, `tabbit`, `trae`, `catpaw`, `dangbei`, `runable`, `meoo`, `wenxin` | — | — | ⚠️ endpoint registered, protocol adapter pending |
 
+### Web login (recommended)
+
+Click **Web login** on a preset: the tool launches your local Chrome/Edge with a dedicated
+profile and `--remote-debugging-port`, lets you sign in normally, then captures that domain's
+cookies plus `localStorage/sessionStorage` over the DevTools protocol and saves them as the
+channel credential (token key chosen automatically, cookie string as fallback).
+
+`POST /admin/api/channels/login/start` → `GET .../login/status` → `POST .../login/finish`.
+Pure standard library (hand-rolled WebSocket + CDP client); requires Chrome/Edge/Chromium,
+otherwise it tells you to paste credentials manually.
+
 Manage them under **Channels** in the web console (`GET/POST/DELETE /admin/api/channels`,
 `POST /admin/api/channels/test`). Credentials stay in your local `config.json`; the API only
 returns masked values.
