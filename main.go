@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-var version = "2.0.0"
+var version = "2.0.1"
 
 const usageText = `
 网关管家 pojiagw —— 本机网关聚合 + 策略注入（Windows / Linux 通用）

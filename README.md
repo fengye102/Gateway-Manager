@@ -1,4 +1,6 @@
-# 网关管家 · 桌面版（pojiagw v2.0.0）
+# 网关管家 · 桌面版（pojiagw v2.0.1）
+
+**中文** | [English](README.en.md)
 
 [![ci](https://github.com/fengye102/Gateway-Manager/actions/workflows/ci.yml/badge.svg)](https://github.com/fengye102/Gateway-Manager/actions/workflows/ci.yml)
 [![release](https://img.shields.io/github/v/release/fengye102/Gateway-Manager?color=blue)](https://github.com/fengye102/Gateway-Manager/releases/latest)
@@ -583,7 +585,23 @@ sudo ./install.sh --uninstall
 - install.sh 自动创建系统用户 @@pojiagw@@、写 systemd unit（含 @@ProtectSystem@@ 等加固）、@@systemctl enable --now@@
 - install.ps1 用原生 @@ConvertFrom-Json@@ 改配置，@@sc.exe@@ 注册服务并设置失败自动重启；文件带 UTF-8 BOM 以免 PowerShell 5.1 按 ANSI 解析中文
 
-## 29. 配置快照与回滚（新）
+## 29. Docker 与一键可观测栈（新）
+
+```bash
+docker compose up -d     # pojiagw + Prometheus + Grafana 一起起来
+# 控制台     http://127.0.0.1:7878/ui
+# 指标       http://127.0.0.1:7878/metrics
+# Prometheus http://127.0.0.1:9090
+# Grafana    http://127.0.0.1:3000 （admin/admin，看板已自动导入）
+```
+
+- 镜像：`Dockerfile` 多阶段构建（`golang:1.21-alpine` → `alpine:3.20`），非 root 用户、只读根文件系统、`no-new-privileges`、内置 `HEALTHCHECK`
+- 首次启动自动 `init` 生成配置，并通过环境变量修正监听地址：`POJIAGW_BIND` / `POJIAGW_PORT` / `POJIAGW_ACCESS_KEY` / `POJIAGW_ADMIN_TOKEN`
+- 数据卷 `./data`：配置、状态、快照都在里面
+- `docker/prometheus.yml` 抓 `pojiagw:7878`；`deploy/prometheus-alerts.yml` 直接挂进 Prometheus；`deploy/grafana-dashboard.json` 由 provisioning 自动导入
+- 单独构建：`docker build -t pojiagw . && docker run -d -p 7878:7878 -v "$PWD/data:/data" pojiagw`
+
+## 30. 配置快照与回滚（新）
 
 - 目录：@@<config 同目录>/snapshots/@@（可用 @@server.snapshot_dir@@ 改），文件名形如 @@20261029-212637-before-config-update.json@@
 - 自动留档点：保存配置、保存规则、应用模板、回滚前（受 @@snapshot_before_save@@ 控制）；也可手动 @@新建快照@@ 并写备注
@@ -591,7 +609,7 @@ sudo ./install.sh --uninstall
 - 控制台「配置」页：列表（时间 / 大小 / 上游 / 策略 / 规则 / 名称）+ @@查看@@（只填进编辑器，不生效）/ @@回滚@@ / @@删除@@
 - 接口：@@GET /admin/api/snapshots@@、@@POST /admin/api/snapshots/create@@、@@/snapshots/rollback@@、@@/snapshots/delete@@、@@GET /admin/api/snapshots/get?name=@@；快照名做了正则白名单，@@../@@ 之类直接 400
 
-## 30. 拦截回放（新）
+## 31. 拦截回放（新）
 
 - 每次被 @@deny@@ 规则拦下的请求都会留档：时间、方法、路径、模型、状态码、命中的规则、**脱敏后的请求头**、请求体（超过 8 KB 截断并标记）
 - 敏感头（authorization / api-key / token / cookie / secret）一律存成 @@***@@
@@ -599,7 +617,7 @@ sudo ./install.sh --uninstall
 - 接口：@@GET|DELETE /admin/api/replay@@、@@POST /admin/api/replay/test {id}@@
 - 保留条数 @@server.replay_limit@@（默认 30，0 关闭）；只存最近 N 条，进程重启即清空（不落盘，避免把用户请求长期留在磁盘）
 
-## 31. 接口一览
+## 32. 接口一览
 
 鉴权：@@admin_token@@ 为空时开放；非空时需要 @@X-Admin-Token: <token>@@、@@Authorization: Bearer <token>@@ 或 @@?token=@@。
 
@@ -631,7 +649,7 @@ sudo ./install.sh --uninstall
 | `GET /admin/api/federation` | 多实例联邦汇总 |
 | `GET /admin/api/experiments` | A/B 实验配置与统计 |
 
-## 32. 部署
+## 33. 部署
 
 ```bash
 # Linux（systemd）
@@ -648,7 +666,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now pojiagw
 
 需要跨机访问时先设 `access_keys` + `admin_token`，再把 `bind` 改成 `0.0.0.0`，并建议放在 Nginx / Caddy 后面加 TLS。
 
-## 33. 构建与验证
+## 34. 构建与验证
 
 ```bash
 go vet ./...        # 0 问题
@@ -681,7 +699,7 @@ UI       33.5 KB，含规则编辑器 / 模板库 / 拖拽
 
 Linux 实测（WSL2，内核 6.18.54.1-microsoft-standard-WSL2 x86_64）：`version / init / serve / health / 12 个内置模板 / 3 个规则节点 / key 池字段 / UI 拖拽标记` 全部正常。
 
-## 34. 目录结构
+## 35. 目录结构
 
 ```
 gateway-manager/
@@ -714,7 +732,7 @@ gateway-manager/
 |-- deploy/              systemd unit、Windows 服务脚本、Grafana 看板、Prometheus 抓取与告警规则
 ```
 
-## 35. 边界
+## 36. 边界
 
 - 只做本机代理与注入治理，不内置第三方账号登录 / Cookie 抓取 / 私有接口适配
 - 暴露到局域网前务必设 `access_keys` 与 `admin_token`

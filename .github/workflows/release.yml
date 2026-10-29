@@ -1,0 +1,73 @@
+name: release
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的 tag（形如 v2.0.1，必须是已存在的 tag）'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: false
+
+      - name: 解析版本
+        id: v
+        run: |
+          ref="${{ github.event.inputs.tag || github.ref_name }}"
+          case "$ref" in
+            v*) ;;
+            *) echo "tag 必须以 v 开头，当前：$ref"; exit 1 ;;
+          esac
+          echo "tag=$ref" >> "$GITHUB_OUTPUT"
+          echo "version=${ref#v}" >> "$GITHUB_OUTPUT"
+
+      - name: 测试
+        run: go test -count=1 ./...
+
+      - name: 交叉编译并打包
+        env:
+          CGO_ENABLED: '0'
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for target in windows/amd64 windows/arm64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os="${target%%/*}"
+            arch="${target##*/}"
+            ext=""
+            [ "$os" = "windows" ] && ext=".exe"
+            bin="pojiagw"
+            name="pojiagw-${VERSION}-${os}-${arch}"
+            GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "dist/${name}${ext}" .
+            if [ "$os" = "windows" ]; then
+              (cd dist && zip -q "${name}.zip" "${name}${ext}" && rm -f "${name}${ext}")
+            else
+              (cd dist && tar czf "${name}.tar.gz" "${name}" && rm -f "${name}")
+            fi
+          done
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+          ls -lh dist
+
+      - name: 创建 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.v.outputs.tag }}
+          name: ${{ steps.v.outputs.tag }} · Gateway Manager
+          generate_release_notes: true
+          files: dist/*
+          fail_on_unmatched_files: true

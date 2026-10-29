@@ -66,3 +66,25 @@ jobs:
         with:
           name: pojiagw-binaries
           path: dist/
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: docker build
+        run: docker build -t pojiagw:ci .
+
+      - name: image smoke test
+        run: |
+          set -euxo pipefail
+          docker run --rm pojiagw:ci version
+          docker run -d --name gw -p 7878:7878 pojiagw:ci
+          ok=0
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:7878/health; then ok=1; break; fi
+            sleep 1
+          done
+          docker logs gw || true
+          docker rm -f gw
+          test "$ok" = "1"

@@ -1,0 +1,12 @@
+.git
+.github
+build
+dist
+snapshots
+*.exe
+*.state.json
+config.json
+smoke*
+install.ps1
+install.sh
+deploy
