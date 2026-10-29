@@ -1,0 +1,22 @@
+# 构建产物
+build/
+*.exe
+*.test
+*.out
+
+# 本地配置与运行态（含真实 key，切勿提交）
+config.json
+*.state.json
+state.json
+snapshots/
+smoke*.json
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 依赖与缓存
+vendor/
+.gocache/

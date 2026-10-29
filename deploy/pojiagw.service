@@ -1,0 +1,22 @@
+[Unit]
+Description=pojiagw gateway manager (local aggregation + strategy injection)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pojiagw
+Group=pojiagw
+WorkingDirectory=/opt/pojiagw
+ExecStart=/opt/pojiagw/pojiagw-linux-amd64 serve -config /opt/pojiagw/config.json
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/pojiagw
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

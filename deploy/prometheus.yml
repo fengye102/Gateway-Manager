@@ -1,0 +1,12 @@
+# 抓取 pojiagw 指标的示例配置
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: pojiagw
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["127.0.0.1:7878"]
+    # 若设置了 server.admin_token，取消下面两行注释
+    # authorization:
+    #   credentials: "<your-admin-token>"

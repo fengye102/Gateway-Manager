@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "server": {
+    "bind": "127.0.0.1",
+    "port": 7878,
+    "access_keys": [],
+    "admin_token": "",
+    "enable_admin_ui": true,
+    "max_body_mb": 32,
+    "health_interval_seconds": 30,
+    "log_limit": 500,
+    "merge_sse": true
+  },
+  "retry": {
+    "max_retries": 2,
+    "failure_threshold": 2,
+    "cooldown_seconds": 60,
+    "request_timeout_seconds": 180,
+    "retry_status": [
+      401,
+      403,
+      408,
+      429
+    ]
+  },
+  "upstreams": [
+    {
+      "id": "local-gw",
+      "name": "本机另一个网关",
+      "base_url": "http://127.0.0.1:8080",
+      "api_keys": [],
+      "models": [],
+      "priority": 0,
+      "rpm": 0,
+      "concurrency": 0,
+      "enabled": true
+    },
+    {
+      "id": "remote",
+      "name": "远端 OpenAI 兼容服务",
+      "base_url": "https://api.example.com",
+      "api_keys": [
+        "sk-aaaa",
+        "sk-bbbb"
+      ],
+      "models": [
+        "gpt-4o-mini",
+        "deepseek-chat"
+      ],
+      "mappings": {
+        "fast": "gpt-4o-mini"
+      },
+      "priority": 10,
+      "rpm": 60,
+      "concurrency": 4,
+      "enabled": true
+    }
+  ],
+  "profiles": [
+    {
+      "id": "default",
+      "name": "默认策略",
+      "models": [],
+      "instruction": "你是一个严谨的工程助手。回答前先确认事实，不确定就直说不确定。",
+      "enabled": true
+    },
+    {
+      "id": "coder",
+      "name": "编码策略",
+      "models": [
+        "gpt-4o-mini",
+        "deepseek-chat"
+      ],
+      "instruction": "你是资深工程师。给出可直接运行的完整代码，不要省略。",
+      "enabled": true
+    }
+  ]
+}

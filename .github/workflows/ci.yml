@@ -1,0 +1,68 @@
+name: ci
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: false
+
+      - name: gofmt
+        shell: bash
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "以下文件未格式化："
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -count=1 ./...
+
+      - name: go build
+        run: go build -trimpath -o /tmp/pojiagw-${{ matrix.os }}${{ (matrix.os == 'windows-latest' && '.exe') || '' }} .
+
+  cross-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: false
+      - name: 交叉编译全部平台
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/pojiagw-windows-amd64.exe .
+          GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/pojiagw-windows-arm64.exe .
+          GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/pojiagw-linux-amd64 .
+          GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/pojiagw-linux-arm64 .
+          GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/pojiagw-darwin-amd64 .
+          GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/pojiagw-darwin-arm64 .
+          ls -lh dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pojiagw-binaries
+          path: dist/
