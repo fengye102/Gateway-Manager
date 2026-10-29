@@ -349,6 +349,207 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 		s.store.Info("模板「%s」已应用到策略", tpl.Name)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 
+	case "channels":
+		cfg := s.store.Config()
+		presets := builtinChannelPresets()
+		if r.Method == http.MethodGet {
+			views := make([]map[string]any, 0, len(cfg.Channels))
+			for _, ch := range cfg.Channels {
+				preset, ok := findPreset(ch.Preset)
+				view := map[string]any{
+					"id": ch.ID, "preset": ch.Preset, "name": ch.Name,
+					"base_url": ch.BaseURL, "models": ch.Models,
+					"priority": ch.Priority, "weight": ch.Weight, "enabled": ch.Enabled,
+					"token_masked": maskKey(ch.Token),
+					"has_token":    strings.TrimSpace(ch.Token) != "",
+					"protocol":     preset.Protocol,
+					"upstream_id":  "ch-" + ch.ID,
+					"notes":        preset.Notes,
+				}
+				if !ok {
+					view["protocol"] = "unknown"
+				}
+				views = append(views, view)
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"presets":  presets,
+				"channels": views,
+			})
+			return
+		}
+		if r.Method == http.MethodDelete {
+			id := strings.TrimSpace(r.URL.Query().Get("id"))
+			if id == "" {
+				var payload struct {
+					ID string `json:"id"`
+				}
+				_ = s.readJSONBody(r, &payload)
+				id = strings.TrimSpace(payload.ID)
+			}
+			if id == "" {
+				proxyError(w, http.StatusBadRequest, "缺少渠道 id")
+				return
+			}
+			next := cloneConfig(cfg)
+			kept := make([]Channel, 0, len(next.Channels))
+			for _, ch := range next.Channels {
+				if ch.ID != id {
+					kept = append(kept, ch)
+				}
+			}
+			next.Channels = kept
+			s.autoSnapshot("before-channel-delete")
+			if err := s.saveConfigAndReload(next); err != nil {
+				proxyError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+			return
+		}
+		var payload struct {
+			ID       string            `json:"id"`
+			Preset   string            `json:"preset"`
+			Name     string            `json:"name"`
+			Token    string            `json:"token"`
+			BaseURL  string            `json:"base_url"`
+			Models   []string          `json:"models"`
+			Headers  map[string]string `json:"headers"`
+			Priority int               `json:"priority"`
+			Weight   int               `json:"weight"`
+			Enabled  *bool             `json:"enabled"`
+		}
+		if err := s.readJSONBody(r, &payload); err != nil {
+			proxyError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		preset, ok := findPreset(payload.Preset)
+		if !ok {
+			proxyError(w, http.StatusBadRequest, "未知渠道模板："+payload.Preset)
+			return
+		}
+		id := strings.TrimSpace(payload.ID)
+		if id == "" {
+			id = payload.Preset
+		}
+		next := cloneConfig(cfg)
+		found := false
+		for i := range next.Channels {
+			if next.Channels[i].ID == id {
+				found = true
+				ch := &next.Channels[i]
+				ch.Preset = payload.Preset
+				if payload.Name != "" {
+					ch.Name = payload.Name
+				}
+				if payload.Token != "" {
+					ch.Token = payload.Token
+				}
+				if payload.BaseURL != "" {
+					ch.BaseURL = payload.BaseURL
+				}
+				if len(payload.Models) > 0 {
+					ch.Models = payload.Models
+				}
+				if len(payload.Headers) > 0 {
+					if ch.Headers == nil {
+						ch.Headers = map[string]string{}
+					}
+					for k, v := range payload.Headers {
+						ch.Headers[k] = v
+					}
+				}
+				ch.Priority = payload.Priority
+				ch.Weight = payload.Weight
+				if payload.Enabled != nil {
+					ch.Enabled = *payload.Enabled
+				}
+			}
+		}
+		if !found {
+			name := payload.Name
+			if name == "" {
+				name = preset.Name
+			}
+			enabled := true
+			if payload.Enabled != nil {
+				enabled = *payload.Enabled
+			}
+			next.Channels = append(next.Channels, Channel{
+				ID:       id,
+				Preset:   payload.Preset,
+				Name:     name,
+				Token:    payload.Token,
+				BaseURL:  payload.BaseURL,
+				Models:   payload.Models,
+				Headers:  payload.Headers,
+				Priority: payload.Priority,
+				Weight:   payload.Weight,
+				Enabled:  enabled,
+			})
+		}
+		s.autoSnapshot("before-channel-save")
+		if err := s.saveConfigAndReload(next); err != nil {
+			proxyError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		s.store.Info("渠道已保存：%s（模板 %s）", id, preset.ID)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": id, "upstream_id": "ch-" + id})
+
+	case "channels/test":
+		var payload struct {
+			ID string `json:"id"`
+		}
+		if err := s.readJSONBody(r, &payload); err != nil {
+			proxyError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		ch, preset, ok := s.store.channelByID(payload.ID)
+		if !ok {
+			proxyError(w, http.StatusNotFound, "渠道不存在："+payload.ID)
+			return
+		}
+		if strings.TrimSpace(preset.ModelsPath) == "" {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"ok": false, "skipped": true,
+				"message": "该渠道模板没有模型探测端点（" + preset.Notes + "）",
+			})
+			return
+		}
+		base := ch.BaseURL
+		if base == "" {
+			base = preset.BaseURL
+		}
+		target := joinURL(base, preset.ModelsPath)
+		req, err := http.NewRequest(http.MethodGet, target, nil)
+		if err != nil {
+			proxyError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		applyChannelAuth(req, preset, ch.Token)
+		for k, v := range preset.ExtraHeaders {
+			req.Header.Set(k, v)
+		}
+		for k, v := range ch.Headers {
+			req.Header.Set(k, v)
+		}
+		client := &http.Client{Timeout: 15 * time.Second}
+		started := time.Now()
+		resp, err := client.Do(req)
+		latency := time.Since(started).Milliseconds()
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": false, "latency_ms": latency, "message": err.Error()})
+			return
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":         resp.StatusCode >= 200 && resp.StatusCode < 300,
+			"status":     resp.StatusCode,
+			"latency_ms": latency,
+			"url":        target,
+			"body":       truncateForReport(string(body), 400),
+		})
+
 	case "experiments":
 		cfg := s.store.Config()
 		writeJSON(w, http.StatusOK, map[string]any{

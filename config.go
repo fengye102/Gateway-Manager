@@ -92,6 +92,8 @@ type Upstream struct {
 	Weight      int               `json:"weight"`
 	Probe       *UpstreamProbe    `json:"probe,omitempty"`
 	Budget      *UpstreamBudget   `json:"budget,omitempty"`
+	ChannelID   string            `json:"channel_id,omitempty"`
+	ChannelPath string            `json:"channel_path,omitempty"`
 	RPM         int               `json:"rpm"`
 	Concurrency int               `json:"concurrency"`
 	Enabled     bool              `json:"enabled"`
@@ -143,6 +145,7 @@ type Config struct {
 	Federation  FederationConfig  `json:"federation"`
 	Adapters    []Adapter         `json:"adapters,omitempty"`
 	Experiments []Experiment      `json:"experiments,omitempty"`
+	Channels    []Channel         `json:"channels,omitempty"`
 }
 
 func DefaultConfig() *Config {
@@ -187,6 +190,7 @@ func DefaultConfig() *Config {
 		Federation:  FederationConfig{Enabled: false, TimeoutMS: 3000, Peers: []FederationPeer{}},
 		Adapters:    []Adapter{},
 		Experiments: []Experiment{},
+		Channels:    []Channel{},
 	}
 }
 
@@ -282,6 +286,18 @@ func normalizeConfig(c *Config) {
 				ExtraHeaders: map[string]string{"anthropic-version": "2023-06-01"},
 			},
 		}
+		c.Channels = []Channel{
+			{
+				ID: "zhipu", Preset: "zhipu-autoclaw", Name: "智谱 AutoGLM",
+				Token: "", Enabled: false, Priority: 5,
+				Headers: map[string]string{},
+			},
+			{
+				ID: "zen", Preset: "opencode-zen", Name: "OpenCode Zen 匿名档",
+				Token: "public", Enabled: true, Priority: 10,
+				Headers: map[string]string{},
+			},
+		}
 		c.Templates = []ProfileTemplate{}
 	}
 	for i := range c.Upstreams {
@@ -327,6 +343,28 @@ func normalizeConfig(c *Config) {
 	}
 	if c.Experiments == nil {
 		c.Experiments = []Experiment{}
+	}
+	if c.Channels == nil {
+		c.Channels = []Channel{}
+	}
+	for i := range c.Channels {
+		ch := &c.Channels[i]
+		if ch.ID == "" {
+			ch.ID = "channel-" + fmt.Sprint(i+1)
+		}
+		if ch.Name == "" {
+			if preset, ok := findPreset(ch.Preset); ok {
+				ch.Name = preset.Name
+			} else {
+				ch.Name = ch.ID
+			}
+		}
+		if ch.Headers == nil {
+			ch.Headers = map[string]string{}
+		}
+		if ch.Weight < 0 {
+			ch.Weight = 0
+		}
 	}
 	for i := range c.Experiments {
 		e := &c.Experiments[i]
@@ -449,6 +487,19 @@ func ValidateConfig(c *Config) error {
 	for i, r := range c.Rules {
 		if r.Type == ruleTypeInject && r.ProfileID != "" && !profIDs[r.ProfileID] {
 			return fmt.Errorf("rules[%d] (%s): profile_id %q 不存在", i, r.ID, r.ProfileID)
+		}
+	}
+	seenChannel := map[string]bool{}
+	for i, ch := range c.Channels {
+		if strings.TrimSpace(ch.ID) == "" {
+			return fmt.Errorf("channels[%d]: id 不能为空", i)
+		}
+		if seenChannel[ch.ID] {
+			return fmt.Errorf("channels[%d]: id %q 重复", i, ch.ID)
+		}
+		seenChannel[ch.ID] = true
+		if _, ok := findPreset(ch.Preset); !ok {
+			return fmt.Errorf("channels[%d] (%s): 未知渠道模板 %q", i, ch.ID, ch.Preset)
 		}
 	}
 	for i, exp := range c.Experiments {

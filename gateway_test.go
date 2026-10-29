@@ -2226,3 +2226,196 @@ func TestInstallerScripts(t *testing.T) {
 		t.Fatal("install.ps1 需要 UTF-8 BOM，否则 PowerShell 5.1 会按 ANSI 解析导致中文乱码")
 	}
 }
+
+func TestChannelPresets(t *testing.T) {
+	presets := builtinChannelPresets()
+	if len(presets) < 10 {
+		t.Fatalf("内置渠道太少: %d", len(presets))
+	}
+	seen := map[string]bool{}
+	openaiLike := 0
+	for _, p := range presets {
+		if p.ID == "" || p.Name == "" {
+			t.Fatalf("渠道字段不完整: %+v", p)
+		}
+		if seen[p.ID] {
+			t.Fatalf("渠道 id 重复: %s", p.ID)
+		}
+		seen[p.ID] = true
+		if !strings.HasPrefix(p.BaseURL, "http") || !strings.HasPrefix(p.ChatPath, "/") {
+			t.Fatalf("渠道 %s 的地址/路径不对: %s %s", p.ID, p.BaseURL, p.ChatPath)
+		}
+		switch p.Protocol {
+		case "openai":
+			openaiLike++
+		case "needs_adapter":
+		default:
+			t.Fatalf("渠道 %s 协议标记非法: %q", p.ID, p.Protocol)
+		}
+		if p.Protocol == "openai" && p.Auth.Type == "" {
+			t.Fatalf("渠道 %s 缺少认证方式", p.ID)
+		}
+	}
+	if openaiLike < 4 {
+		t.Fatalf("可直接用的渠道太少: %d", openaiLike)
+	}
+	for _, want := range []string{"opencode-zen", "zhipu-autoclaw", "workbuddy", "raccoon", "deepseek-web", "trae"} {
+		if _, ok := findPreset(want); !ok {
+			t.Fatalf("缺少渠道模板 %s", want)
+		}
+	}
+}
+
+func TestChannelRoutingOpenAICompatible(t *testing.T) {
+	var gotPath, gotAuth, gotProduct, gotBody string
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("X-Authorization")
+		gotProduct = r.Header.Get("X-Product")
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"zhipu-1","object":"chat.completion","usage":{"total_tokens":9},"choices":[]}`)
+	}))
+	defer vendor.Close()
+
+	cfg := DefaultConfig()
+	cfg.Channels = []Channel{{
+		ID: "zhipu", Preset: "zhipu-autoclaw", Token: "tk-zhipu",
+		BaseURL: vendor.URL, Enabled: true,
+	}}
+	gw := startGateway(t, cfg)
+
+	resp, body := postJSON(t, gw.URL+"/v1/chat/completions", `{"model":"glm-5","messages":[{"role":"user","content":"hi"}]}`, nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("渠道请求失败 %d: %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, "zhipu-1") {
+		t.Fatalf("响应不是来自渠道: %s", body)
+	}
+	if gotPath != "/autoclaw-proxy/proxy/autoclaw/chat/completions" {
+		t.Fatalf("渠道路径未生效: %q", gotPath)
+	}
+	if gotAuth != "Bearer tk-zhipu" {
+		t.Fatalf("渠道认证头未生效: %q", gotAuth)
+	}
+	if gotProduct != "autoclaw" {
+		t.Fatalf("渠道额外头未生效: %q", gotProduct)
+	}
+	if !strings.Contains(gotBody, "glm-5") {
+		t.Fatalf("请求体未透传: %q", gotBody)
+	}
+
+	st, err := http.Get(gw.URL + "/admin/api/status")
+	if err != nil {
+		t.Fatalf("读取状态失败: %v", err)
+	}
+	raw, _ := io.ReadAll(st.Body)
+	st.Body.Close()
+	if !strings.Contains(string(raw), "\"id\":\"ch-zhipu\"") {
+		t.Fatalf("渠道未作为上游出现: %s", string(raw)[:min(len(string(raw)), 600)])
+	}
+}
+
+func TestChannelQueryAuthAndTest(t *testing.T) {
+	var gotToken, gotPath string
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotToken = r.URL.Query().Get("token")
+		if r.URL.Path == "/zen/v1/models" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"data":[{"id":"grok-code"}]}`)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"x","object":"chat.completion","choices":[]}`)
+	}))
+	defer vendor.Close()
+
+	cfg := DefaultConfig()
+	cfg.Channels = []Channel{
+		{ID: "xunfei", Preset: "xunfei-loomy", Token: "tk-query", BaseURL: vendor.URL, Enabled: true},
+		{ID: "zen", Preset: "opencode-zen", Token: "public", BaseURL: vendor.URL, Enabled: false},
+	}
+	gw := startGateway(t, cfg)
+
+	resp, body := postJSON(t, gw.URL+"/v1/chat/completions", `{"model":"m","messages":[]}`, nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("渠道请求失败 %d: %s", resp.StatusCode, body)
+	}
+	if gotPath != "/api/v1/chat/completions" || gotToken != "tk-query" {
+		t.Fatalf("query 认证未生效: path=%q token=%q", gotPath, gotToken)
+	}
+
+	// 探活：opencode 模板有模型端点
+	probeBody, _ := json.Marshal(map[string]string{"id": "zen"})
+	resp2, body2 := postJSON(t, gw.URL+"/admin/api/channels/test", string(probeBody), nil)
+	if resp2.StatusCode != 200 {
+		t.Fatalf("探活失败 %d: %s", resp2.StatusCode, body2)
+	}
+	if !strings.Contains(body2, "\"ok\":true") || !strings.Contains(body2, "/zen/v1/models") {
+		t.Fatalf("探活结果不对: %s", body2)
+	}
+}
+
+func TestChannelCRUD(t *testing.T) {
+	store := NewStore(DefaultConfig(), "")
+	gw := httptest.NewServer(NewServer(store).Handler())
+	defer gw.Close()
+
+	// 预设列表
+	res, err := http.Get(gw.URL + "/admin/api/channels")
+	if err != nil {
+		t.Fatalf("读取渠道失败: %v", err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	var listed struct {
+		Presets  []ChannelPreset  `json:"presets"`
+		Channels []map[string]any `json:"channels"`
+	}
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatalf("渠道列表不是 JSON: %v", err)
+	}
+	if len(listed.Presets) < 10 {
+		t.Fatalf("预设数量不对: %d", len(listed.Presets))
+	}
+
+	// 新增
+	payload, _ := json.Marshal(map[string]any{"id": "zz", "preset": "zhipu-autoclaw", "token": "sk-very-secret-token"})
+	resp, body := postJSON(t, gw.URL+"/admin/api/channels", string(payload), nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("新增渠道失败 %d: %s", resp.StatusCode, body)
+	}
+	if len(store.Config().Channels) != 1 || store.Config().Channels[0].Token != "sk-very-secret-token" {
+		t.Fatalf("渠道未落库: %+v", store.Config().Channels)
+	}
+
+	// 列表里 token 必须被遮罩
+	res2, _ := http.Get(gw.URL + "/admin/api/channels")
+	raw2, _ := io.ReadAll(res2.Body)
+	res2.Body.Close()
+	if strings.Contains(string(raw2), "sk-very-secret-token") {
+		t.Fatalf("渠道列表泄露了明文 token")
+	}
+	if !strings.Contains(string(raw2), "sk-v…oken") {
+		t.Fatalf("遮罩格式不对: %s", string(raw2)[:min(len(string(raw2)), 400)])
+	}
+
+	// 非法模板
+	bad, _ := json.Marshal(map[string]any{"preset": "no-such-vendor"})
+	resp3, body3 := postJSON(t, gw.URL+"/admin/api/channels", string(bad), nil)
+	if resp3.StatusCode != 400 {
+		t.Fatalf("非法模板应 400，得到 %d: %s", resp3.StatusCode, body3)
+	}
+
+	// 删除
+	req, _ := http.NewRequest(http.MethodDelete, gw.URL+"/admin/api/channels?id=zz", nil)
+	del, _ := http.DefaultClient.Do(req)
+	if del != nil {
+		del.Body.Close()
+	}
+	if len(store.Config().Channels) != 0 {
+		t.Fatalf("渠道未删除: %+v", store.Config().Channels)
+	}
+}

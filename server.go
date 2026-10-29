@@ -525,6 +525,24 @@ func (s *Server) forward(ctx context.Context, up *Upstream, kind endpointKind, u
 		upstreamPath = kind.upstreamPath()
 	}
 	target := joinURL(up.BaseURL, upstreamPath)
+
+	var channelPreset ChannelPreset
+	var channelCfg Channel
+	hasChannel := false
+	if up.ChannelID != "" {
+		if ch, preset, ok := s.store.channelByID(up.ChannelID); ok {
+			channelCfg = ch
+			channelPreset = preset
+			hasChannel = true
+			chatPath := preset.ChatPath
+			if strings.TrimSpace(up.ChannelPath) != "" {
+				chatPath = up.ChannelPath
+			}
+			if upstreamPath == "" || upstreamPath == kind.upstreamPath() {
+				target = channelChatURL(up.BaseURL, chatPath)
+			}
+		}
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
@@ -532,7 +550,17 @@ func (s *Server) forward(ctx context.Context, up *Upstream, kind endpointKind, u
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("User-Agent", "gateway-manager/"+version)
-	if key != "" {
+	if hasChannel {
+		for k, v := range channelPreset.ExtraHeaders {
+			req.Header.Set(k, v)
+		}
+		for k, v := range channelCfg.Headers {
+			req.Header.Set(k, v)
+		}
+		if key != "" {
+			applyChannelAuth(req, channelPreset, key)
+		}
+	} else if key != "" {
 		if adapter != nil {
 			req.Header.Set(adapter.AuthHeader, adapter.AuthPrefix+key)
 		} else {

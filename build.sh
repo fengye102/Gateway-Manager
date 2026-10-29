@@ -8,7 +8,7 @@ build_one() {
   local out="${1}" goos="${2}" goarch="${3}" goarm="${4:-}"
   echo "building ${goos}/${goarch}${goarm} -> ${out}"
   GOOS="${goos}" GOARCH="${goarch}" ${goarm:+GOARM="${goarm}"} \
-    go build -trimpath -ldflags "-s -w -X main.version=2.1.2" -o "${out}" .
+    go build -trimpath -ldflags "-s -w -X main.version=2.2.0" -o "${out}" .
 }
 
 build_one build/gateway-manager-linux-amd64       linux   amd64

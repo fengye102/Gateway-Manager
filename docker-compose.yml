@@ -7,7 +7,7 @@
 services:
   gateway-manager:
     build: .
-    image: gateway-manager:2.1.2
+    image: gateway-manager:2.2.0
     container_name: gateway-manager
     ports:
       - "7878:7878"

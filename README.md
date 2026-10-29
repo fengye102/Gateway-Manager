@@ -1,4 +1,4 @@
-# 网关管家 · 桌面版（gateway-manager v2.1.2）
+# 网关管家 · 桌面版（gateway-manager v2.2.0）
 
 **中文** | [English](README.en.md)
 
@@ -66,10 +66,10 @@ notepad config.json                                        # 填 upstreams[].bas
 ### Linux / macOS
 
 ```bash
-curl -LO https://github.com/fengye102/Gateway-Manager/releases/latest/download/gateway-manager-2.1.2-linux-amd64.tar.gz
-tar xzf gateway-manager-2.1.2-linux-amd64.tar.gz
-./gateway-manager-2.1.2-linux-amd64 init -config config.json
-./gateway-manager-2.1.2-linux-amd64 serve -config config.json
+curl -LO https://github.com/fengye102/Gateway-Manager/releases/latest/download/gateway-manager-2.2.0-linux-amd64.tar.gz
+tar xzf gateway-manager-2.2.0-linux-amd64.tar.gz
+./gateway-manager-2.2.0-linux-amd64 init -config config.json
+./gateway-manager-2.2.0-linux-amd64 serve -config config.json
 ```
 
 ### Docker
@@ -93,7 +93,7 @@ docker compose up -d     # gateway-manager + Prometheus + Grafana
 
 | 现象 | 处理 |
 | --- | --- |
-| 双击后窗口一闪就没 | 已修：v2.1.2 起会自动生成配置并常驻；旧版请用 `start-windows.bat` 或命令行启动 |
+| 双击后窗口一闪就没 | 已修：v2.2.0 起会自动生成配置并常驻；旧版请用 `start-windows.bat` 或命令行启动 |
 | 提示「Windows 已保护你的电脑」 | 右键 exe → 属性 → 解除锁定；或「更多信息 → 仍要运行」 |
 | 端口 7878 被占用 | `serve -config config.json -listen 127.0.0.1:8787` |
 | 杀软拦截 | 未签名二进制误报，可加排除项或自行编译 |
@@ -636,7 +636,52 @@ docker compose up -d     # gateway-manager + Prometheus + Grafana 一起起来
 - `docker/prometheus.yml` 抓 `gateway-manager:7878`；`deploy/prometheus-alerts.yml` 直接挂进 Prometheus；`deploy/grafana-dashboard.json` 由 provisioning 自动导入
 - 单独构建：`docker build -t gateway-manager . && docker run -d -p 7878:7878 -v "$PWD/data:/data" gateway-manager`
 
-## 30. 配置快照与回滚（新）
+## 30. 反代渠道（新）
+
+「渠道」就是你真正要反代的**模型来源**：地址 / 路径 / 认证方式 / 额外请求头都取自原版 APK 的反编译结果，填上凭证即可当上游用。
+
+| 模板 id | 名称 | 端点 | 认证 | 状态 |
+| --- | --- | --- | --- | --- |
+| `opencode-zen` | OpenCode Zen（匿名免费档） | `opencode.ai/inference/v1/chat/completions` | Bearer（填 `public`） | ✅ openai |
+| `zhipu-autoclaw` | 智谱 AutoGLM / autoclaw | `autoglm-acceleration-api.zhipuai.cn/autoclaw-proxy/proxy/autoclaw/chat/completions` | `X-Authorization: Bearer` | ✅ openai |
+| `workbuddy` | WorkBuddy / CodeBuddy | `www.workbuddy.ai/v2/chat/completions` | Cookie | ✅ openai |
+| `raccoon` | 商汤 小浣熊 | `xiaohuanxiong.com/api/web/llm/v2/chat/completions` | `X-Auth-Token` | ✅ openai |
+| `xunfei-loomy` | 科大讯飞 Loomy | `loomyad.xunfei.cn/api/v1/chat/completions` | 查询参数 `token` | ✅ openai |
+| `deepseek-web` | DeepSeek 网页版 | `chat.deepseek.com/api/v0/chat/completion` | Bearer + cookie | ⚠️ 需 PoW 适配 |
+| `tabbit` | Tabbit | `web.tabbit.com/api/v3/chat/runs` | Cookie + 签名头 | ⚠️ 待适配 |
+| `trae` | Trae | `api.trae.cn/cloudide/api/v3/...` | `X-Cloudide-Token` | ⚠️ 待适配 |
+| `catpaw` | 美团 CatPaw | `ai.catpaw.meituan.com` | Cookie | ⚠️ 待适配 |
+| `dangbei` | 当贝 AI | `ai-api.dangbei.net/ai-search` | Bearer | ⚠️ 待适配 |
+| `runable` | Runable | `api.runable.com/api/chat/text` | Bearer | ⚠️ 待适配 |
+| `meoo` | 阿里 秒悟 Meoo | `meoo.com/api/v1/...` | Cookie | ⚠️ 待适配 |
+| `wenxin` | 百度 文心 | `chat.baidu.com/aichat/api/conversation` | Cookie | ⚠️ 待适配 |
+
+### 用法
+
+1. 控制台「渠道」页 → 选一个模板点「加入」→ 粘贴凭证（token / cookie；`opencode-zen` 填 `public`）
+2. 保存后它自动变成一条上游：ID 为 `ch-<渠道 id>`，参与优先级 / 权重 / 冷却 / 预算 / 指标
+3. 点「探活」用该模板的模型端点做一次连通性检查（无模型端点的模板会提示跳过）
+4. 客户端照旧 `http://127.0.0.1:7878/v1`，模型名用该渠道的模型即可
+
+也可以直接写配置：
+
+```json
+"channels": [
+  { "id": "zhipu", "preset": "zhipu-autoclaw", "token": "<从桌面端登录态取的 token>",
+    "enabled": true, "priority": 0, "weight": 0,
+    "base_url": "https://autoglm-acceleration-api.zhipuai.cn",
+    "models": ["glm-5"], "headers": { "X-Request-Model": "glm-5" } }
+]
+```
+
+### 凭证与边界
+
+- 凭证存在本地 `config.json`（**不会**上传到任何地方）；`/admin/api/channels` 只返回遮罩值（`tk…mo`）
+- 不内置自动登录 / 抓 cookie：凭证需要你自己从合法持有的账号里取
+- 标 ⚠️ 的模板只做了地址与请求头登记，请求/响应协议仍需适配（DeepSeek 需要 PoW 挑战头与专用 prompt 标记，Trae/Tabbit 需要签名头与私有响应格式）
+- 接非标准协议时也可以用 `adapters`（路径 / 认证头 / 额外头）或自己在 `channels.go` 加一个 adapter 函数
+
+## 31. 配置快照与回滚（新）
 
 - 目录：@@<config 同目录>/snapshots/@@（可用 @@server.snapshot_dir@@ 改），文件名形如 @@20261029-212637-before-config-update.json@@
 - 自动留档点：保存配置、保存规则、应用模板、回滚前（受 @@snapshot_before_save@@ 控制）；也可手动 @@新建快照@@ 并写备注
@@ -644,7 +689,7 @@ docker compose up -d     # gateway-manager + Prometheus + Grafana 一起起来
 - 控制台「配置」页：列表（时间 / 大小 / 上游 / 策略 / 规则 / 名称）+ @@查看@@（只填进编辑器，不生效）/ @@回滚@@ / @@删除@@
 - 接口：@@GET /admin/api/snapshots@@、@@POST /admin/api/snapshots/create@@、@@/snapshots/rollback@@、@@/snapshots/delete@@、@@GET /admin/api/snapshots/get?name=@@；快照名做了正则白名单，@@../@@ 之类直接 400
 
-## 31. 拦截回放（新）
+## 32. 拦截回放（新）
 
 - 每次被 @@deny@@ 规则拦下的请求都会留档：时间、方法、路径、模型、状态码、命中的规则、**脱敏后的请求头**、请求体（超过 8 KB 截断并标记）
 - 敏感头（authorization / api-key / token / cookie / secret）一律存成 @@***@@
@@ -652,7 +697,7 @@ docker compose up -d     # gateway-manager + Prometheus + Grafana 一起起来
 - 接口：@@GET|DELETE /admin/api/replay@@、@@POST /admin/api/replay/test {id}@@
 - 保留条数 @@server.replay_limit@@（默认 30，0 关闭）；只存最近 N 条，进程重启即清空（不落盘，避免把用户请求长期留在磁盘）
 
-## 32. 接口一览
+## 33. 接口一览
 
 鉴权：@@admin_token@@ 为空时开放；非空时需要 @@X-Admin-Token: <token>@@、@@Authorization: Bearer <token>@@ 或 @@?token=@@。
 
@@ -684,7 +729,7 @@ docker compose up -d     # gateway-manager + Prometheus + Grafana 一起起来
 | `GET /admin/api/federation` | 多实例联邦汇总 |
 | `GET /admin/api/experiments` | A/B 实验配置与统计 |
 
-## 33. 部署
+## 34. 部署
 
 ```bash
 # Linux（systemd）
@@ -701,7 +746,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now gateway-manager
 
 需要跨机访问时先设 `access_keys` + `admin_token`，再把 `bind` 改成 `0.0.0.0`，并建议放在 Nginx / Caddy 后面加 TLS。
 
-## 34. 构建与验证
+## 35. 构建与验证
 
 ```bash
 go vet ./...        # 0 问题
@@ -734,7 +779,7 @@ UI       33.5 KB，含规则编辑器 / 模板库 / 拖拽
 
 Linux 实测（WSL2，内核 6.18.54.1-microsoft-standard-WSL2 x86_64）：`version / init / serve / health / 12 个内置模板 / 3 个规则节点 / key 池字段 / UI 拖拽标记` 全部正常。
 
-## 35. 目录结构
+## 36. 目录结构
 
 ```
 gateway-manager/
@@ -767,7 +812,7 @@ gateway-manager/
 |-- deploy/              systemd unit、Windows 服务脚本、Grafana 看板、Prometheus 抓取与告警规则
 ```
 
-## 36. 边界
+## 37. 边界
 
 - 只做本机代理与注入治理，不内置第三方账号登录 / Cookie 抓取 / 私有接口适配
 - 暴露到局域网前务必设 `access_keys` 与 `admin_token`

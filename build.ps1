@@ -17,7 +17,7 @@ foreach ($t in $targets) {
     $env:GOOS = $t.GOOS
     $env:GOARCH = $t.GOARCH
     Write-Host ("building {0}/{1} -> {2}" -f $t.GOOS, $t.GOARCH, $t.Out)
-    go build -trimpath -ldflags "-s -w -X main.version=2.1.2" -o $t.Out .
+    go build -trimpath -ldflags "-s -w -X main.version=2.2.0" -o $t.Out .
     if ($LASTEXITCODE -ne 0) { throw "build failed: $($t.Out)" }
 }
 Write-Host 'done.'

@@ -1,4 +1,4 @@
-# Gateway Manager (gateway-manager) v2.1.2
+# Gateway Manager (gateway-manager) v2.2.0
 
 [中文](README.md) | **English**
 
@@ -42,7 +42,7 @@ plane around it:
 
 | Symptom | Fix |
 | --- | --- |
-| window flashes and closes | fixed in v2.1.2 (auto-init + stays open); older builds: use `start-windows.bat` |
+| window flashes and closes | fixed in v2.2.0 (auto-init + stays open); older builds: use `start-windows.bat` |
 | "Windows protected your PC" | Unblock the file, or More info → Run anyway |
 | port 7878 busy | `serve -config config.json -listen 127.0.0.1:8787` |
 | antivirus warning | unsigned Go binary false positive; add exclusion or build locally |
@@ -66,7 +66,7 @@ docker run -d --name gateway-manager -p 7878:7878 -v "$PWD/data:/data" gateway-m
 
 ```bash
 # Linux / macOS
-curl -LO https://github.com/fengye102/Gateway-Manager/releases/latest/download/gateway-manager-2.1.2-linux-amd64.tar.gz
+curl -LO https://github.com/fengye102/Gateway-Manager/releases/latest/download/gateway-manager-2.2.0-linux-amd64.tar.gz
 chmod +x gateway-manager-linux-amd64 && ./gateway-manager-linux-amd64 init -config config.json
 ./gateway-manager-linux-amd64 serve -config config.json
 ```
@@ -105,6 +105,24 @@ sudo ./install.sh --uninstall
 
 Paths without `/v1` are normalised automatically. Errors use
 `{"error":{"message":"...","type":"proxy_error"}}`.
+
+## Channels
+
+Built-in reverse-proxy channels (base URL / path / auth / extra headers ported from the
+original app's network layer). Fill in a credential and it becomes an upstream (`ch-<id>`):
+
+| preset | vendor | auth | status |
+| --- | --- | --- | --- |
+| `opencode-zen` | OpenCode Zen (anonymous) | Bearer `public` | ✅ OpenAI-compatible |
+| `zhipu-autoclaw` | Zhipu AutoGLM | `X-Authorization: Bearer` | ✅ OpenAI-compatible |
+| `workbuddy` | WorkBuddy / CodeBuddy | Cookie | ✅ OpenAI-compatible |
+| `raccoon` | SenseTime Raccoon | `X-Auth-Token` | ✅ OpenAI-compatible |
+| `xunfei-loomy` | iFlytek Loomy | query `token` | ✅ OpenAI-compatible |
+| `deepseek-web`, `tabbit`, `trae`, `catpaw`, `dangbei`, `runable`, `meoo`, `wenxin` | — | — | ⚠️ endpoint registered, protocol adapter pending |
+
+Manage them under **Channels** in the web console (`GET/POST/DELETE /admin/api/channels`,
+`POST /admin/api/channels/test`). Credentials stay in your local `config.json`; the API only
+returns masked values.
 
 ## Configuration (essentials)
 

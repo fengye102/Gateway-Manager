@@ -1270,6 +1270,18 @@ func estimateTokens(payload []byte) int {
 	return est
 }
 
+func (s *Store) channelByID(id string) (Channel, ChannelPreset, bool) {
+	cfg := s.Config()
+	for _, ch := range cfg.Channels {
+		if ch.ID != id {
+			continue
+		}
+		preset, ok := findPreset(ch.Preset)
+		return ch, preset, ok
+	}
+	return Channel{}, ChannelPreset{}, false
+}
+
 func (s *Store) AddTokenUsage(id string, tokens int) {
 	if tokens <= 0 {
 		return
@@ -1313,8 +1325,18 @@ func (s *Store) ReconcileBudget(u *Upstream, estimate int, actual int) {
 // effectiveUpstreams = 配置里的上游 + 联邦 peer（当 peer 被声明为上游时）
 func (s *Store) effectiveUpstreams() []Upstream {
 	cfg := s.Config()
-	out := make([]Upstream, 0, len(cfg.Upstreams)+len(cfg.Federation.Peers))
+	out := make([]Upstream, 0, len(cfg.Upstreams)+len(cfg.Federation.Peers)+len(cfg.Channels))
 	out = append(out, cfg.Upstreams...)
+	for _, ch := range cfg.Channels {
+		if !ch.Enabled {
+			continue
+		}
+		preset, ok := findPreset(ch.Preset)
+		if !ok {
+			continue
+		}
+		out = append(out, ch.toUpstream(preset))
+	}
 	if !cfg.Federation.Enabled {
 		return out
 	}

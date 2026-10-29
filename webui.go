@@ -103,6 +103,7 @@ const adminIndexHTML = `
 <nav>
   <button data-tab="status" class="active">状态</button>
   <button data-tab="upstreams">上游</button>
+  <button data-tab="channels">渠道</button>
   <button data-tab="rules">规则</button>
   <button data-tab="profiles">策略</button>
   <button data-tab="logs">日志</button>
@@ -151,6 +152,34 @@ const adminIndexHTML = `
       <th>ID</th><th>名称</th><th>状态</th><th>熔断</th><th>优先级</th><th>权重</th><th>请求 / 成功 / 失败</th>
       <th>并发</th><th>最近</th><th>延迟</th><th>模型</th>
     </tr></thead><tbody></tbody></table>
+  </section>
+
+  <section id="tab-channels">
+    <div class="panel" style="margin-bottom:14px">
+      <div class="row">
+        <b>内置渠道</b>
+        <span class="muted">地址 / 路径 / 认证方式取自原版 APK 的反编译结果；openai 协议可直接用，needs_adapter 需补协议适配</span>
+        <span style="flex:1"></span>
+        <button id="reloadChannels">刷新</button>
+      </div>
+      <table id="presetTable"><thead><tr>
+        <th style="width:170px">模板</th><th style="width:100px">厂商</th><th style="width:110px">协议</th>
+        <th style="width:300px">端点</th><th>说明</th><th style="width:80px">操作</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="panel">
+      <div class="row">
+        <b>已配置渠道</b>
+        <span class="muted">保存后自动成为一条上游（ID 形如 <code>ch-&lt;id&gt;</code>）</span>
+      </div>
+      <table id="channelTable"><thead><tr>
+        <th style="width:120px">ID</th><th style="width:150px">名称</th><th style="width:120px">模板</th>
+        <th style="width:110px">凭证</th><th style="width:80px">状态</th><th style="width:80px">优先级</th>
+        <th style="width:80px">权重</th><th>模型</th><th style="width:150px">操作</th>
+      </tr></thead><tbody></tbody></table>
+      <div id="channelOut" class="panel mono" style="display:none;margin-top:12px"></div>
+    </div>
   </section>
 
   <section id="tab-rules">
@@ -916,6 +945,83 @@ document.getElementById('clearReplay').addEventListener('click', function(){
   fetch('/admin/api/replay', { method: 'DELETE', headers: headers() }).then(function(){ note('拦截回放已清空'); loadReplay(); });
 });
 
+function loadChannels(){
+  api('channels').then(function(r){
+    if (!r.ok) { return; }
+    state.channels = r.body || {};
+    renderChannels();
+  });
+}
+function renderChannels(){
+  var d = state.channels || {};
+  var presets = d.presets || [];
+  var configured = d.channels || [];
+  var pbody = document.getElementById('presetTable').querySelector('tbody');
+  pbody.innerHTML = presets.map(function(p){
+    var badge = p.protocol === 'openai'
+      ? '<span class="pill ok">openai</span>'
+      : '<span class="pill warn">needs_adapter</span>';
+    return '<tr>' +
+      '<td class="mono">' + esc(p.id) + '</td>' +
+      '<td class="mono muted">' + esc(p.vendor) + '</td>' +
+      '<td>' + badge + '</td>' +
+      '<td class="mono muted">' + esc(p.base_url + p.chat_path) + '</td>' +
+      '<td class="muted">' + esc(p.name + ' · ' + (p.notes || '')) + '</td>' +
+      '<td><button data-add-channel="' + esc(p.id) + '">加入</button></td>' +
+      '</tr>';
+  }).join('');
+  pbody.querySelectorAll('button[data-add-channel]').forEach(function(b){
+    b.addEventListener('click', function(){ addChannel(b.dataset.addChannel); });
+  });
+
+  var cbody = document.getElementById('channelTable').querySelector('tbody');
+  cbody.innerHTML = configured.map(function(c){
+    return '<tr>' +
+      '<td class="mono">' + esc(c.id) + '</td>' +
+      '<td>' + esc(c.name) + '</td>' +
+      '<td class="mono muted">' + esc(c.preset) + '</td>' +
+      '<td class="mono">' + esc(c.has_token ? c.token_masked : '未填') + '</td>' +
+      '<td>' + (c.enabled ? '<span class="pill ok">启用</span>' : '<span class="pill off">停用</span>') + '</td>' +
+      '<td class="mono">' + (c.priority || 0) + '</td>' +
+      '<td class="mono">' + (c.weight || 0) + '</td>' +
+      '<td class="mono muted">' + esc((c.models || []).join(', ') || '模板默认') + '</td>' +
+      '<td><button data-test-channel="' + esc(c.id) + '">探活</button> ' +
+      '<button data-del-channel="' + esc(c.id) + '">删除</button></td>' +
+      '</tr>';
+  }).join('') || '<tr><td colspan="9" class="muted">还没有配置渠道，点上方「加入」</td></tr>';
+  cbody.querySelectorAll('button[data-test-channel]').forEach(function(b){
+    b.addEventListener('click', function(){ testChannel(b.dataset.testChannel); });
+  });
+  cbody.querySelectorAll('button[data-del-channel]').forEach(function(b){
+    b.addEventListener('click', function(){ removeChannel(b.dataset.delChannel); });
+  });
+}
+function addChannel(presetId){
+  var token = prompt('粘贴该渠道的凭证（token / cookie；匿名渠道填 public）', 'public');
+  if (token === null) { return; }
+  post('channels', { preset: presetId, id: presetId, token: token }).then(function(r){
+    if (r.ok) { loadChannels(); load(); } else { alert('保存失败：' + JSON.stringify(r.body)); }
+  });
+}
+function testChannel(id){
+  post('channels/test', { id: id }).then(function(r){
+    var out = document.getElementById('channelOut');
+    out.style.display = 'block';
+    var d = r.body || {};
+    var text = d.skipped
+      ? ('跳过探活：' + (d.message || ''))
+      : ('探活结果：' + (d.ok ? '成功' : '失败') + ' · HTTP ' + (d.status || '-') + ' · ' + (d.latency_ms || 0) + 'ms\n' + (d.url || '') + '\n' + (d.body || d.message || ''));
+    out.innerHTML = '<pre>' + esc(text) + '</pre>';
+  });
+}
+function removeChannel(id){
+  if (!confirm('删除渠道 ' + id + ' ？')) { return; }
+  fetch('/admin/api/channels?id=' + encodeURIComponent(id), { method: 'DELETE', headers: headers() }).then(function(r){
+    if (r.ok) { loadChannels(); load(); }
+  });
+}
+document.getElementById('reloadChannels').addEventListener('click', loadChannels);
+
 function loadFederation(){
   api('federation').then(function(r){
     if (!r.ok) { return; }
@@ -1151,6 +1257,7 @@ loadReplay();
 loadSamples();
 loadDSL();
 loadFederation();
+loadChannels();
 load();
 setInterval(load, 3000);
 setInterval(loadTemplates, 30000);

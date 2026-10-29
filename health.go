@@ -48,6 +48,14 @@ func (s *Server) checkAllUpstreams(ctx context.Context) {
 }
 
 func (s *Server) checkUpstream(ctx context.Context, u *Upstream) {
+	if u.ChannelID != "" {
+		if _, preset, ok := s.store.channelByID(u.ChannelID); ok {
+			if strings.TrimSpace(preset.ModelsPath) == "" {
+				s.store.SetHealth(u.ID, true, nil, "")
+				return
+			}
+		}
+	}
 	timeout := 5 * time.Second
 	if u.Probe != nil && u.Probe.TimeoutMS > 0 {
 		timeout = time.Duration(u.Probe.TimeoutMS) * time.Millisecond
