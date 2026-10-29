@@ -3,7 +3,7 @@ groups:
   - name: gateway-manager.upstream
     interval: 30s
     rules:
-      - alert: PojiagwUpstreamDown
+      - alert: GatewayManagerUpstreamDown
         expr: gateway_manager_upstream_healthy == 0
         for: 2m
         labels:
@@ -13,7 +13,7 @@ groups:
           summary: "上游 {{ $labels.upstream }} 不健康"
           description: "{{ $labels.name }} 连续失败已进入冷却，检查 base_url / key / models 配置。"
 
-      - alert: PojiagwAllKeysCooling
+      - alert: GatewayManagerAllKeysCooling
         expr: sum by (upstream) (gateway_manager_key_cooling) >= count by (upstream) (gateway_manager_key_score) and count by (upstream) (gateway_manager_key_score) > 0
         for: 2m
         labels:
@@ -23,7 +23,7 @@ groups:
           summary: "上游 {{ $labels.upstream }} 的所有 key 都在冷却"
           description: "该上游已无可用的 key，请求会被跳过。检查 401/429 日志与配额。"
 
-      - alert: PojiagwKeyScoreLow
+      - alert: GatewayManagerKeyScoreLow
         expr: gateway_manager_key_score < 30
         for: 5m
         labels:
@@ -33,7 +33,7 @@ groups:
           summary: "key {{ $labels.key }} 评分偏低（{{ $value }}）"
           description: "上游 {{ $labels.upstream }} 的该 key 连续失败，正在被降权。"
 
-      - alert: PojiagwUpstreamErrorRatio
+      - alert: GatewayManagerUpstreamErrorRatio
         expr: (sum(rate(gateway_manager_upstream_errors_total[5m])) / clamp_min(sum(rate(gateway_manager_requests_total[5m])), 0.0001)) > 0.2
         for: 10m
         labels:
@@ -46,7 +46,7 @@ groups:
   - name: gateway-manager.traffic
     interval: 30s
     rules:
-      - alert: PojiagwP95LatencyHigh
+      - alert: GatewayManagerP95LatencyHigh
         expr: histogram_quantile(0.95, sum by (le) (rate(gateway_manager_upstream_duration_seconds_bucket[5m]))) > 15
         for: 10m
         labels:
@@ -56,7 +56,7 @@ groups:
           summary: "上游 p95 延迟超过 15s"
           description: "当前 p95 = {{ $value }}s，考虑调低超时、换上游或降级分流权重。"
 
-      - alert: PojiagwAuthFailureBurst
+      - alert: GatewayManagerAuthFailureBurst
         expr: sum(increase(gateway_manager_auth_failures_total[10m])) > 20
         for: 1m
         labels:
@@ -69,7 +69,7 @@ groups:
   - name: gateway-manager.rules-engine
     interval: 30s
     rules:
-      - alert: PojiagwRuleDenySpike
+      - alert: GatewayManagerRuleDenySpike
         expr: sum(rate(gateway_manager_rule_denies_total[5m])) > 5
         for: 5m
         labels:
@@ -79,7 +79,7 @@ groups:
           summary: "规则拦截速率偏高"
           description: "当前 {{ $value }}/s 被规则拦下，打开控制台「规则-拦截回放」看具体请求。"
 
-      - alert: PojiagwInjectConflict
+      - alert: GatewayManagerInjectConflict
         expr: sum(increase(gateway_manager_inject_conflict_total[10m])) > 5
         for: 5m
         labels:
@@ -92,7 +92,7 @@ groups:
   - name: gateway-manager.self
     interval: 30s
     rules:
-      - alert: PojiagwStateSaveStale
+      - alert: GatewayManagerStateSaveStale
         expr: gateway_manager_state_last_save_timestamp > 0 and (time() - gateway_manager_state_last_save_timestamp) > 900
         for: 10m
         labels:

@@ -1,36 +1,33 @@
 @echo off
-rem 网关管家 Windows 双击启动器
-rem - 首次运行会自动生成本目录下的 config.json
-rem - 启动后自动打开 http://127.0.0.1:7878/ui
-rem - 停止请按 Ctrl+C，窗口会保留错误信息
+chcp 65001 >nul
 setlocal
 cd /d "%~dp0"
 
-set "EXE="
-for %%F in ("%~dp0gateway-manager.exe") do if exist "%%~fF" set "EXE=%%~fF"
-if not defined EXE for %%F in ("%~dp0gateway-manager-windows-amd64.exe") do if exist "%%~fF" set "EXE=%%~fF"
-if not defined EXE for %%F in ("%~dp0gateway-manager*amd64*.exe") do if exist "%%~fF" set "EXE=%%~fF"
-if not defined EXE for %%F in ("%~dp0*.exe") do if exist "%%~fF" set "EXE=%%~fF"
-if not defined EXE (
-  echo [错误] 同目录下找不到 gateway-manager 的 exe
-  echo         请把本 bat 与 exe 放在同一个文件夹里再运行。
-  pause
-  exit /b 1
-)
+set "EXE=%~dp0gateway-manager.exe"
+if not exist "%EXE%" set "EXE=%~dp0gateway-manager-windows-amd64.exe"
+if not exist "%EXE%" goto :noexe
+
 echo 使用程序: %EXE%
+if exist "%~dp0config.json" goto :run
 
-if not exist "%~dp0config.json" (
-  echo 首次运行：正在生成默认配置...
-  "%EXE%" init -config "%~dp0config.json"
-  echo.
-  echo 默认配置已生成：%~dp0config.json
-  echo 打开它把 upstreams[].base_url 改成你自己的网关地址即可。
-  echo.
-)
-
-echo 启动网关管家（关闭窗口或 Ctrl+C 停止）...
-"%EXE%" serve -config "%~dp0config.json"
-
+echo 首次运行：正在生成默认配置 ...
+"%EXE%" init -config "%~dp0config.json"
 echo.
-echo 服务已退出（退出码 %ERRORLEVEL%）。
+echo 配置已生成：%~dp0config.json
+echo 把 upstreams[].base_url 改成你自己的网关地址即可。
+echo.
+
+:run
+echo 启动网关管家，按 Ctrl+C 或关闭窗口停止 ...
+"%EXE%" serve -config "%~dp0config.json"
+echo.
+echo 服务已退出，退出码 %ERRORLEVEL%。
 pause
+exit /b 0
+
+:noexe
+echo [错误] 没找到 gateway-manager.exe，请把 exe 与本脚本放在同一个文件夹。
+echo 当前目录下的 exe：
+dir /b "%~dp0*.exe"
+pause
+exit /b 1

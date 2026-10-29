@@ -1245,9 +1245,9 @@ func TestAlertRulesFileValid(t *testing.T) {
 		t.Fatalf("告警组或条目不足")
 	}
 	for _, name := range []string{
-		"PojiagwUpstreamDown", "PojiagwAllKeysCooling", "PojiagwKeyScoreLow",
-		"PojiagwUpstreamErrorRatio", "PojiagwP95LatencyHigh", "PojiagwAuthFailureBurst",
-		"PojiagwRuleDenySpike", "PojiagwInjectConflict", "PojiagwStateSaveStale",
+		"GatewayManagerUpstreamDown", "GatewayManagerAllKeysCooling", "GatewayManagerKeyScoreLow",
+		"GatewayManagerUpstreamErrorRatio", "GatewayManagerP95LatencyHigh", "GatewayManagerAuthFailureBurst",
+		"GatewayManagerRuleDenySpike", "GatewayManagerInjectConflict", "GatewayManagerStateSaveStale",
 	} {
 		if !strings.Contains(text, "alert: "+name) {
 			t.Fatalf("缺少告警 %s", name)

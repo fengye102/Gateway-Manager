@@ -1,4 +1,4 @@
-# 网关管家 · 桌面版（gateway-manager v2.1.1）
+# 网关管家 · 桌面版（gateway-manager v2.1.2）
 
 **中文** | [English](README.en.md)
 
@@ -66,10 +66,10 @@ notepad config.json                                        # 填 upstreams[].bas
 ### Linux / macOS
 
 ```bash
-curl -LO https://github.com/fengye102/Gateway-Manager/releases/latest/download/gateway-manager-2.1.1-linux-amd64.tar.gz
-tar xzf gateway-manager-2.1.1-linux-amd64.tar.gz
-./gateway-manager-2.1.1-linux-amd64 init -config config.json
-./gateway-manager-2.1.1-linux-amd64 serve -config config.json
+curl -LO https://github.com/fengye102/Gateway-Manager/releases/latest/download/gateway-manager-2.1.2-linux-amd64.tar.gz
+tar xzf gateway-manager-2.1.2-linux-amd64.tar.gz
+./gateway-manager-2.1.2-linux-amd64 init -config config.json
+./gateway-manager-2.1.2-linux-amd64 serve -config config.json
 ```
 
 ### Docker
@@ -93,7 +93,7 @@ docker compose up -d     # gateway-manager + Prometheus + Grafana
 
 | 现象 | 处理 |
 | --- | --- |
-| 双击后窗口一闪就没 | 已修：v2.1.1 起会自动生成配置并常驻；旧版请用 `start-windows.bat` 或命令行启动 |
+| 双击后窗口一闪就没 | 已修：v2.1.2 起会自动生成配置并常驻；旧版请用 `start-windows.bat` 或命令行启动 |
 | 提示「Windows 已保护你的电脑」 | 右键 exe → 属性 → 解除锁定；或「更多信息 → 仍要运行」 |
 | 端口 7878 被占用 | `serve -config config.json -listen 127.0.0.1:8787` |
 | 杀软拦截 | 未签名二进制误报，可加排除项或自行编译 |
@@ -336,15 +336,15 @@ promtool check rules /etc/prometheus/rules/prometheus-alerts.yml
 
 | 告警 | 触发条件（简写） | 级别 |
 | --- | --- | --- |
-| PojiagwUpstreamDown | @@gateway_manager_upstream_healthy == 0@@ 持续 2m | warning |
-| PojiagwAllKeysCooling | 该上游所有 key 的 @@key_cooling@@ 全为 1 | critical |
-| PojiagwKeyScoreLow | @@gateway_manager_key_score < 30@@ 持续 5m | warning |
-| PojiagwUpstreamErrorRatio | 5m 错误率 / 请求率 > 20% | critical |
-| PojiagwP95LatencyHigh | @@histogram_quantile(0.95,…) > 15s@@ 持续 10m | warning |
-| PojiagwAuthFailureBurst | 10m 鉴权失败 > 20 次 | warning |
-| PojiagwRuleDenySpike | 拦截速率 > 5/s 持续 5m | warning |
-| PojiagwInjectConflict | 10m 注入冲突 > 5 次 | info |
-| PojiagwStateSaveStale | 状态文件 15m 未更新 | warning |
+| GatewayManagerUpstreamDown | @@gateway_manager_upstream_healthy == 0@@ 持续 2m | warning |
+| GatewayManagerAllKeysCooling | 该上游所有 key 的 @@key_cooling@@ 全为 1 | critical |
+| GatewayManagerKeyScoreLow | @@gateway_manager_key_score < 30@@ 持续 5m | warning |
+| GatewayManagerUpstreamErrorRatio | 5m 错误率 / 请求率 > 20% | critical |
+| GatewayManagerP95LatencyHigh | @@histogram_quantile(0.95,…) > 15s@@ 持续 10m | warning |
+| GatewayManagerAuthFailureBurst | 10m 鉴权失败 > 20 次 | warning |
+| GatewayManagerRuleDenySpike | 拦截速率 > 5/s 持续 5m | warning |
+| GatewayManagerInjectConflict | 10m 注入冲突 > 5 次 | info |
+| GatewayManagerStateSaveStale | 状态文件 15m 未更新 | warning |
 
 ## 13. 耗时分解（新）
 
