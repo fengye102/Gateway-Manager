@@ -358,7 +358,7 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request, kind endpoi
 			s.store.RecordFailure(l, 0, ferr.Error())
 			s.store.ObserveUpstream(up.ID, 0, time.Since(started))
 			s.store.Release(l)
-			lastMessage = fmt.Sprintf("Upstream %s connection failed", up.Name)
+			lastMessage = fmt.Sprintf("Upstream %s connection failed: %v", up.Name, ferr)
 			lastStatus = http.StatusBadGateway
 			s.store.Error("上游 %s 连接失败：%v", up.Name, ferr)
 			if len(up.APIKeys) <= 1 {
@@ -532,6 +532,11 @@ func (s *Server) forward(ctx context.Context, up *Upstream, kind endpointKind, u
 	var channelPreset ChannelPreset
 	var channelCfg Channel
 	hasChannel := false
+	if up.ChannelID != "" {
+		if ch, preset, ok := s.store.channelByID(up.ChannelID); ok && preset.ID == "deepseek-web" {
+			return s.deepseekForward(ctx, ch, preset, payload)
+		}
+	}
 	if up.ChannelID != "" {
 		if ch, preset, ok := s.store.channelByID(up.ChannelID); ok {
 			channelCfg = ch

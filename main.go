@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -18,7 +19,7 @@ import (
 	"time"
 )
 
-var version = "2.3.0"
+var version = "2.4.0"
 
 const usageText = `
 网关管家 gateway-manager —— 本机网关聚合 + 策略注入（Windows / Linux 通用）
@@ -51,6 +52,8 @@ func main() {
 		args = args[1:]
 	}
 	switch cmd {
+	case "probe-deepseek":
+		runProbeDeepSeek(args)
 	case "serve", "run", "start":
 		runServe(args, len(os.Args) == 1)
 	case "discover", "scan":
@@ -70,6 +73,80 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+}
+
+func runProbeDeepSeek(args []string) {
+	fs := flag.NewFlagSet("probe-deepseek", flag.ExitOnError)
+	credsPath := fs.String("creds", "creds.json", "含 token / cookie 的 JSON 文件")
+	prompt := fs.String("prompt", "你好，用一句话介绍你自己", "发送内容")
+	thinking := fs.Bool("thinking", false, "开启思考")
+	search := fs.Bool("search", false, "开启联网")
+	headBytes := fs.Int("head", 1500, "打印响应前多少字节")
+	powDebug := fs.Bool("powdebug", false, "只打印 PoW 挑战与字节序匹配结果")
+	_ = fs.Parse(args)
+
+	var creds struct {
+		Token  string `json:"token"`
+		Cookie string `json:"cookie"`
+	}
+	raw, err := os.ReadFile(*credsPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "读取凭证失败：%v\n", err)
+		os.Exit(1)
+	}
+	if err := json.Unmarshal(raw, &creds); err != nil {
+		fmt.Fprintf(os.Stderr, "解析凭证失败：%v\n", err)
+		os.Exit(1)
+	}
+
+	client := newDeepseekClient(creds.Token, creds.Cookie, 180*time.Second)
+	ctx := context.Background()
+	if *powDebug {
+		out, status, err := client.postJSON(ctx, "/api/v0/chat/create_pow_challenge", map[string]any{"target_path": "/api/v0/chat/completion"}, nil)
+		fmt.Printf("challenge HTTP %d: %s\n", status, string(out))
+		if err == nil {
+			var payload struct {
+				Data struct {
+					BizData struct {
+						Challenge deepseekChallenge `json:"challenge"`
+					} `json:"biz_data"`
+				} `json:"data"`
+			}
+			if json.Unmarshal(out, &payload) == nil {
+				chal := payload.Data.BizData.Challenge
+				fmt.Printf("algorithm=%s difficulty=%d expire_at=%d salt=%s\n", chal.Algorithm, chal.Difficulty, chal.ExpireAt, chal.Salt)
+				limit := chal.Difficulty
+				if limit <= 0 {
+					limit = 144000
+				}
+				fmt.Println("变体结果:", solveDebug(chal, limit))
+			}
+		}
+		return
+	}
+
+	sessionID, err := client.createSession(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "创建会话失败：%v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("会话:", sessionID)
+	promptText := "<｜User｜>" + *prompt + "<｜Assistant｜>"
+	started := time.Now()
+	resp, err := client.complete(ctx, sessionID, promptText, *thinking, *search)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "请求失败：%v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	fmt.Printf("HTTP %d · %d 字节 · %dms · ct=%s\n", resp.StatusCode, len(body), time.Since(started).Milliseconds(), resp.Header.Get("Content-Type"))
+	n := *headBytes
+	if n > len(body) {
+		n = len(body)
+	}
+	fmt.Println("---- 原始响应 ----")
+	fmt.Println(string(body[:n]))
 }
 
 func runServe(args []string, bare bool) {

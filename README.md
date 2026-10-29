@@ -647,7 +647,7 @@ docker compose up -d     # gateway-manager + Prometheus + Grafana 一起起来
 | `workbuddy` | WorkBuddy / CodeBuddy | `www.workbuddy.ai/v2/chat/completions` | Cookie | ✅ openai |
 | `raccoon` | 商汤 小浣熊 | `xiaohuanxiong.com/api/web/llm/v2/chat/completions` | `X-Auth-Token` | ✅ openai |
 | `xunfei-loomy` | 科大讯飞 Loomy | `loomyad.xunfei.cn/api/v1/chat/completions` | 查询参数 `token` | ✅ openai |
-| `deepseek-web` | DeepSeek 网页版 | `chat.deepseek.com/api/v0/chat/completion` | Bearer + cookie | ⚠️ 需 PoW 适配 |
+| `deepseek-web` | DeepSeek 网页版 | `chat.deepseek.com/api/v0/chat/completion` | Bearer + cookie | ✅ 已适配（PoW + patch 流） |
 | `tabbit` | Tabbit | `web.tabbit.com/api/v3/chat/runs` | Cookie + 签名头 | ⚠️ 待适配 |
 | `trae` | Trae | `api.trae.cn/cloudide/api/v3/...` | `X-Cloudide-Token` | ⚠️ 待适配 |
 | `catpaw` | 美团 CatPaw | `ai.catpaw.meituan.com` | Cookie | ⚠️ 待适配 |
@@ -685,6 +685,22 @@ docker compose up -d     # gateway-manager + Prometheus + Grafana 一起起来
     "base_url": "https://autoglm-acceleration-api.zhipuai.cn",
     "models": ["glm-5"], "headers": { "X-Request-Model": "glm-5" } }
 ]
+```
+
+### DeepSeek 适配细节（已打通）
+
+DeepSeek 网页版不是 OpenAI 形状，三步都补上了：
+
+1. **PoW（DeepSeekHashV1）**：`POST /api/v0/chat/create_pow_challenge` 拿到 `challenge/salt/expire_at/difficulty`，然后暴力找 `n` 使 `hash(salt_expire_at_ + n)` 等于 challenge。这里的关键是：它**不是标准 SHA3-256**，而是原版 APK 里那份 Keccak-f1600 的变体——**23 轮（跳过 RC[0]）+ rate 136 + 0x06/0x80 padding**。照标准 SHA3 算永远解不出来（实测 144000 次内 0 命中，改对轮数后 72648 命中）。解出后 base64 成 JSON 放进 `x-ds-pow-response`。
+2. **prompt 格式**：OpenAI messages 拼成 `<｜User｜>...<｜Assistant｜>...<｜end▁of▁sentence｜>...<｜System｜>...<｜Assistant｜>`。
+3. **响应还原**：DeepSeek 的 patch 流（`{"v":{...}}` 首帧快照、`{"v":"增量"}`、`{"p":...,"o":"APPEND","v":"..."}`、`BATCH` 里的 `accumulated_token_usage`）转回 OpenAI 的 `chat.completion(.chunk)`，流式带 `[DONE]`，用量写进 `usage.completion_tokens`。
+
+实测（用自己的登录态）：
+
+```
+非流式 → {"choices":[{"message":{"content":"我是DeepSeek，由深度求索公司创造的AI助手…"}}],
+          "usage":{"completion_tokens":64,"total_tokens":64}}
+流式   → 21 个 chunk，首帧 role、增量 delta、末帧 finish_reason=stop、usage、[DONE]
 ```
 
 ### 凭证与边界

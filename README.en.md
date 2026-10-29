@@ -118,7 +118,8 @@ original app's network layer). Fill in a credential and it becomes an upstream (
 | `workbuddy` | WorkBuddy / CodeBuddy | Cookie | ✅ OpenAI-compatible |
 | `raccoon` | SenseTime Raccoon | `X-Auth-Token` | ✅ OpenAI-compatible |
 | `xunfei-loomy` | iFlytek Loomy | query `token` | ✅ OpenAI-compatible |
-| `deepseek-web`, `tabbit`, `trae`, `catpaw`, `dangbei`, `runable`, `meoo`, `wenxin` | — | — | ⚠️ endpoint registered, protocol adapter pending |
+| `deepseek-web` | DeepSeek web | Bearer + cookie | ✅ adapted (DeepSeekHashV1 PoW + patch stream) |
+| `tabbit`, `trae`, `catpaw`, `dangbei`, `runable`, `meoo`, `wenxin` | — | — | ⚠️ endpoint registered, protocol adapter pending |
 
 ### Web login (recommended)
 

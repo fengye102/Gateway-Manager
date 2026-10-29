@@ -626,8 +626,16 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 			sort.Strings(storageKeys)
 			storageCandidateKey, storageCandidate = pickTokenFromStorage(storage)
 		}
+		reveal := r.URL.Query().Get("reveal") == "1"
+		var storageDump map[string]string
+		if reveal {
+			if st, err := session.storageSnapshot(preset); err == nil {
+				storageDump = st
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"active":         true,
+			"storage":        storageDump,
 			"login_url":      session.LoginURL,
 			"browser":        filepath.Base(session.Browser),
 			"cookie_count":   len(cookies),
@@ -669,31 +677,22 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 			proxyError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		token := cookiesToToken(cookies)
-		tokenKind := "cookie"
-		if pk := strings.TrimSpace(payload.TokenKey); pk != "" {
-			storage, err := session.storageSnapshot(preset)
-			if err != nil {
-				proxyError(w, http.StatusBadRequest, "读取页面存储失败："+err.Error())
-				return
+		cookieValue := cookiesToToken(cookies)
+		token := ""
+		tokenKind := ""
+		if storage, err := session.storageSnapshot(preset); err == nil {
+			key := preset.TokenStorageKey
+			if key == "" {
+				key, _ = pickTokenFromStorage(storage)
 			}
-			if v := strings.TrimSpace(storage[pk]); v != "" {
-				token = v
-				tokenKind = pk
+			if raw := strings.TrimSpace(storage[key]); raw != "" {
+				token = unwrapStorageValue(raw)
+				tokenKind = key
 			}
 		}
 		if token == "" {
-			if key, val := func() (string, string) {
-				storage, err := session.storageSnapshot(preset)
-				if err != nil {
-					return "", ""
-				}
-				return pickTokenFromStorage(storage)
-			}(); val != "" {
-				token = val
-				tokenKind = key
-				s.store.Info("未指定 token 键，自动选用 %s", key)
-			}
+			token = cookieValue
+			tokenKind = "cookie"
 		}
 		if token == "" {
 			proxyError(w, http.StatusBadRequest, "还没抓到 cookie 或 token，请先在打开的浏览器里完成登录")
@@ -710,13 +709,16 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 			if next.Channels[i].ID == id {
 				next.Channels[i].Preset = preset.ID
 				next.Channels[i].Token = token
+				if cookieValue != "" {
+					next.Channels[i].Cookie = cookieValue
+				}
 				next.Channels[i].Enabled = enabled
 				found = true
 			}
 		}
 		if !found {
 			next.Channels = append(next.Channels, Channel{
-				ID: id, Preset: preset.ID, Name: preset.Name, Token: token,
+				ID: id, Preset: preset.ID, Name: preset.Name, Token: token, Cookie: cookieValue,
 				Enabled: enabled, Headers: map[string]string{},
 			})
 		}

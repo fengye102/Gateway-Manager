@@ -529,6 +529,24 @@ func pickTokenFromStorage(storage map[string]string) (string, string) {
 	return bestKey, bestVal
 }
 
+// unwrapStorageValue：页面存储经常是 {"value":"...","__version":0} 结构
+func unwrapStorageValue(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if !strings.HasPrefix(trimmed, "{") {
+		return trimmed
+	}
+	var wrapper struct {
+		Value any `json:"value"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &wrapper); err != nil {
+		return trimmed
+	}
+	if s, ok := wrapper.Value.(string); ok {
+		return s
+	}
+	return trimmed
+}
+
 func cookiesToToken(cookies []cdpCookie) string {
 	parts := make([]string, 0, len(cookies))
 	for _, c := range cookies {

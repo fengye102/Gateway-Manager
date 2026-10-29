@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -2552,5 +2553,100 @@ func TestChannelLoginWithoutBrowser(t *testing.T) {
 	}
 	if !strings.Contains(body, "未找到 Chrome") {
 		t.Fatalf("错误提示不友好: %s", body)
+	}
+}
+
+func TestBuildDeepSeekPrompt(t *testing.T) {
+	msgs := []map[string]any{
+		{"role": "system", "content": "你是猫娘"},
+		{"role": "user", "content": "你好"},
+		{"role": "assistant", "content": "喵"},
+		{"role": "user", "content": "再说一次"},
+	}
+	got := buildDeepSeekPrompt(msgs)
+	want := "<｜User｜>你好<｜Assistant｜>喵<｜end▁of▁sentence｜><｜User｜>再说一次<｜System｜>你是猫娘<｜Assistant｜>"
+	if got != want {
+		t.Fatalf("prompt 拼接错误:\n got=%q\nwant=%q", got, want)
+	}
+	multi := buildDeepSeekPrompt([]map[string]any{{"role": "user", "content": []any{map[string]any{"type": "text", "text": "a"}, map[string]any{"type": "text", "text": "b"}}}})
+	if multi != "<｜User｜>ab<｜Assistant｜>" {
+		t.Fatalf("数组 content 解析错误: %q", multi)
+	}
+}
+
+func TestParseDeepSeekStreamToDeltas(t *testing.T) {
+	raw := "event: ready\ndata: {\"request_message_id\":1}\n\n" +
+		"data: {\"v\":{\"response\":{\"fragments\":[{\"type\":\"RESPONSE\",\"content\":\"你好\"}],\"accumulated_token_usage\":12}}}\n\n" +
+		"data: {\"p\":\"response/fragments/-1/content\",\"o\":\"APPEND\",\"v\":\"！\"}\n\n" +
+		"data: {\"v\":\"我是\"}\n\n" +
+		"data: {\"v\":\"DeepSeek\"}\n\n" +
+		"data: {\"p\":\"response\",\"o\":\"BATCH\",\"v\":[{\"p\":\"accumulated_token_usage\",\"v\":68}]}\n\n" +
+		"event: close\ndata: {\"click_behavior\":\"none\"}\n\n"
+	var sb strings.Builder
+	usage := parseDeepSeekStream(strings.NewReader(raw), func(d string) { sb.WriteString(d) })
+	if sb.String() != "你好！我是DeepSeek" {
+		t.Fatalf("流拼接错误: %q", sb.String())
+	}
+	if usage != 68 {
+		t.Fatalf("用量解析错误: %d", usage)
+	}
+}
+
+func TestUnwrapStorageValue(t *testing.T) {
+	cases := map[string]string{
+		`{"value":"enoRKQ8","__version":0}`: "enoRKQ8",
+		`plain-token`:                       "plain-token",
+		`{"value":123}`:                     `{"value":123}`,
+	}
+	for in, want := range cases {
+		if got := unwrapStorageValue(in); got != want {
+			t.Fatalf("unwrap(%q)=%q want %q", in, got, want)
+		}
+	}
+}
+
+func TestDeepSeekChannelRouting(t *testing.T) {
+	var gotPath string
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		if r.URL.Path == "/api/v0/chat_session/create" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"code":0,"data":{"biz_data":{"chat_session":{"id":"sess-1"}}}}`)
+			return
+		}
+		if r.URL.Path == "/api/v0/chat/create_pow_challenge" {
+			w.Header().Set("Content-Type", "application/json")
+			ch := deepseekHash([]byte("s_1_0"))
+			_, _ = fmt.Fprintf(w, `{"code":0,"data":{"biz_data":{"challenge":{"algorithm":"DeepSeekHashV1","challenge":"%s","salt":"s","expire_at":1,"difficulty":1,"signature":"sig","target_path":"/api/v0/chat/completion"}}}}`, hex.EncodeToString(ch[:]))
+			return
+		}
+		if r.URL.Path == "/api/v0/chat/completion" {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "data: {\"v\":{\"response\":{\"fragments\":[{\"type\":\"RESPONSE\",\"content\":\"hi\"}],\"accumulated_token_usage\":5}}}\n\n"+
+				"data: {\"v\":\" there\"}\n\n")
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer vendor.Close()
+
+	origBase := deepseekBaseOverride
+	deepseekBaseOverride = vendor.URL
+	defer func() { deepseekBaseOverride = origBase }()
+
+	cfg := DefaultConfig()
+	cfg.Channels = []Channel{{
+		ID: "ds", Preset: "deepseek-web", Token: "tk", Cookie: "ds_session_id=x", Enabled: true,
+	}}
+	gw := startGateway(t, cfg)
+	resp, body := postJSON(t, gw.URL+"/v1/chat/completions", `{"model":"deepseek-chat","messages":[{"role":"user","content":"hi"}]}`, nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("DeepSeek 渠道请求失败 %d: %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, "hi there") {
+		t.Fatalf("内容拼接错误: %s", body)
+	}
+	if gotPath != "/api/v0/chat/completion" {
+		t.Fatalf("没有走 DeepSeek 协议: %q", gotPath)
 	}
 }

@@ -20,3 +20,6 @@ Thumbs.db
 # 依赖与缓存
 vendor/
 .gocache/
+
+creds.json
+smoke*.json

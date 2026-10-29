@@ -16,18 +16,19 @@ type ChannelAuth struct {
 
 // ChannelPreset 是内置渠道模板（端口自原版 APK 的实际请求路径 / 请求头）
 type ChannelPreset struct {
-	ID           string            `json:"id"`
-	Name         string            `json:"name"`
-	Vendor       string            `json:"vendor"`
-	BaseURL      string            `json:"base_url"`
-	ChatPath     string            `json:"chat_path"`
-	LoginURL     string            `json:"login_url,omitempty"`
-	ModelsPath   string            `json:"models_path,omitempty"`
-	Auth         ChannelAuth       `json:"auth"`
-	ExtraHeaders map[string]string `json:"extra_headers,omitempty"`
-	Models       []string          `json:"models,omitempty"`
-	Protocol     string            `json:"protocol"` // openai | needs_adapter
-	Notes        string            `json:"notes,omitempty"`
+	ID              string            `json:"id"`
+	Name            string            `json:"name"`
+	Vendor          string            `json:"vendor"`
+	BaseURL         string            `json:"base_url"`
+	ChatPath        string            `json:"chat_path"`
+	LoginURL        string            `json:"login_url,omitempty"`
+	TokenStorageKey string            `json:"token_storage_key,omitempty"`
+	ModelsPath      string            `json:"models_path,omitempty"`
+	Auth            ChannelAuth       `json:"auth"`
+	ExtraHeaders    map[string]string `json:"extra_headers,omitempty"`
+	Models          []string          `json:"models,omitempty"`
+	Protocol        string            `json:"protocol"` // openai | needs_adapter
+	Notes           string            `json:"notes,omitempty"`
 }
 
 // Channel 用户配置的渠道实例（带凭证），会被当成上游使用
@@ -36,6 +37,7 @@ type Channel struct {
 	Preset   string            `json:"preset"`
 	Name     string            `json:"name,omitempty"`
 	Token    string            `json:"token,omitempty"`
+	Cookie   string            `json:"cookie,omitempty"`
 	BaseURL  string            `json:"base_url,omitempty"`
 	Models   []string          `json:"models,omitempty"`
 	Headers  map[string]string `json:"headers,omitempty"`
@@ -116,17 +118,18 @@ func builtinChannelPresets() []ChannelPreset {
 		{
 			ID: "deepseek-web", Name: "DeepSeek 网页版", Vendor: "deepseek",
 			BaseURL: "https://chat.deepseek.com", ChatPath: "/api/v0/chat/completion",
-			LoginURL:   "https://chat.deepseek.com/sign_in",
-			ModelsPath: "/api/v0/users/current",
-			Auth:       ChannelAuth{Type: "bearer", Header: "Authorization", Prefix: "Bearer "},
+			LoginURL:        "https://chat.deepseek.com/sign_in",
+			ModelsPath:      "/api/v0/users/current",
+			TokenStorageKey: "localStorage.userToken",
+			Auth:            ChannelAuth{Type: "bearer", Header: "Authorization", Prefix: "Bearer "},
 			ExtraHeaders: map[string]string{
 				"x-client-platform": "web",
 				"x-client-version":  "2.5.0",
 				"x-client-locale":   "zh_CN",
 			},
 			Models:   []string{"deepseek-chat", "deepseek-reasoner"},
-			Protocol: "needs_adapter",
-			Notes:    "需要 PoW 挑战头 x-ds-pow-response + 专用 prompt 格式（<｜User｜> 标记），尚未适配",
+			Protocol: "openai",
+			Notes:    "已适配：DeepSeekHashV1 PoW（23 轮 Keccak）+ <｜User｜> prompt + patch 流转 OpenAI",
 		},
 		{
 			ID: "tabbit", Name: "Tabbit", Vendor: "tabbit",
