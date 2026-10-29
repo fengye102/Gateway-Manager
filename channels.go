@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strings"
@@ -141,20 +142,6 @@ func builtinChannelPresets() []ChannelPreset {
 			Notes:        "需要 X-Req-Ctx / X-Nonce / X-Timestamp / X-Signature 签名头 + 私有响应格式，尚未适配",
 		},
 		{
-			ID: "trae", Name: "Trae", Vendor: "trae",
-			BaseURL: "https://api.trae.cn", ChatPath: "/cloudide/api/v3/trae/chat",
-			LoginURL: "https://www.trae.cn/",
-			Auth:     ChannelAuth{Type: "header", Header: "X-Cloudide-Token", Prefix: ""},
-			ExtraHeaders: map[string]string{
-				"X-App-Id":      "6eefa01c-1036-4c7e-9ca5-d891f63bfcd8",
-				"X-App-Version": "default",
-				"X-Device-Type": "windows",
-				"X-Ide-Version": "stable",
-			},
-			Protocol: "needs_adapter",
-			Notes:    "需要 X-Uid / X-Machine-Id / x-device-id 等设备头 + IDE 专用协议，尚未适配",
-		},
-		{
 			ID: "catpaw", Name: "美团 CatPaw", Vendor: "catpaw",
 			BaseURL: "https://ai.catpaw.meituan.com", ChatPath: "/api/chat",
 			LoginURL: "https://ai.catpaw.meituan.com/",
@@ -196,6 +183,12 @@ func builtinChannelPresets() []ChannelPreset {
 			Notes:    "私有协议，尚未适配",
 		},
 	}
+}
+
+// channelAdapters：需要协议转换的渠道实现
+var channelAdapters = map[string]func(*Server, context.Context, Channel, ChannelPreset, []byte) (*http.Response, error){
+	"deepseek-web": (*Server).deepseekForward,
+	"runable":      (*Server).runableForward,
 }
 
 func findPreset(id string) (ChannelPreset, bool) {

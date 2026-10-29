@@ -2264,7 +2264,7 @@ func TestChannelPresets(t *testing.T) {
 	if openaiLike < 4 {
 		t.Fatalf("可直接用的渠道太少: %d", openaiLike)
 	}
-	for _, want := range []string{"opencode-zen", "zhipu-autoclaw", "workbuddy", "raccoon", "deepseek-web", "trae"} {
+	for _, want := range []string{"opencode-zen", "zhipu-autoclaw", "workbuddy", "raccoon", "deepseek-web"} {
 		if _, ok := findPreset(want); !ok {
 			t.Fatalf("缺少渠道模板 %s", want)
 		}
@@ -2648,5 +2648,88 @@ func TestDeepSeekChannelRouting(t *testing.T) {
 	}
 	if gotPath != "/api/v0/chat/completion" {
 		t.Fatalf("没有走 DeepSeek 协议: %q", gotPath)
+	}
+}
+
+func TestBuildRunablePrompt(t *testing.T) {
+	msgs := []map[string]any{
+		{"role": "system", "content": "你是助手"},
+		{"role": "user", "content": "你好"},
+		{"role": "assistant", "content": "喵"},
+		{"role": "tool", "content": "结果"},
+	}
+	got := buildRunablePrompt(msgs)
+	want := "你是助手\n\n你好\n\n[assistant]: 喵\n\n[tool]: 结果"
+	if got != want {
+		t.Fatalf("Runable prompt 错误:\n got=%q\nwant=%q", got, want)
+	}
+}
+
+func TestParseRunableStream(t *testing.T) {
+	raw := ": ping\n\n" +
+		`data: {"type":"start"}` + "\n\n" +
+		`data: {"type":"text-delta","delta":"你好"}` + "\n\n" +
+		`data: {"type":"text-delta","textDelta":"世界"}` + "\n\n" +
+		`data: {"type":"finish","usage":{"totalTokens":42}}` + "\n\n" +
+		`data: [DONE]` + "\n\n"
+	var sb strings.Builder
+	usage := parseRunableStream(strings.NewReader(raw), func(d string) { sb.WriteString(d) })
+	if sb.String() != "你好世界" {
+		t.Fatalf("流解析错误: %q", sb.String())
+	}
+	if usage != 42 {
+		t.Fatalf("用量解析错误: %d", usage)
+	}
+	if got := looseText(`0:"hello"`); got != "hello" {
+		t.Fatalf("AI SDK 兜底解析错误: %q", got)
+	}
+}
+
+func TestRunableChannelRouting(t *testing.T) {
+	var gotPath, gotCookie, gotDevice, gotBody string
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotCookie = r.Header.Get("Cookie")
+		gotDevice = r.Header.Get("x-runable-device")
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		if r.URL.Path == "/api/auth/get-session" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"session":{"id":"s"},"user":{"email":"a@b.c"}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, `data: {"type":"text-delta","delta":"喵"}`+"\n\n")
+		_, _ = io.WriteString(w, `data: {"type":"text-delta","delta":"~"}`+"\n\n")
+	}))
+	defer vendor.Close()
+
+	orig := runableBaseOverride
+	runableBaseOverride = vendor.URL
+	defer func() { runableBaseOverride = orig }()
+
+	cfg := DefaultConfig()
+	cfg.Channels = []Channel{{
+		ID: "rb", Preset: "runable", Cookie: "session=abc", Enabled: true,
+	}}
+	gw := startGateway(t, cfg)
+	resp, body := postJSON(t, gw.URL+"/v1/chat/completions", `{"model":"runable/runner-chat","messages":[{"role":"user","content":"hi"}]}`, nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("Runable 渠道失败 %d: %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, "喵~") {
+		t.Fatalf("内容错误: %s", body)
+	}
+	if gotPath != "/api/chat/text" {
+		t.Fatalf("没有走 Runable 协议: %q", gotPath)
+	}
+	if gotCookie != "session=abc" {
+		t.Fatalf("cookie 未透传: %q", gotCookie)
+	}
+	if !strings.HasPrefix(gotDevice, "dweb/") {
+		t.Fatalf("设备头缺失: %q", gotDevice)
+	}
+	if !strings.Contains(gotBody, `"trigger":"submit-message"`) {
+		t.Fatalf("请求体结构不对: %s", gotBody)
 	}
 }

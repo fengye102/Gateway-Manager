@@ -649,10 +649,9 @@ docker compose up -d     # gateway-manager + Prometheus + Grafana 一起起来
 | `xunfei-loomy` | 科大讯飞 Loomy | `loomyad.xunfei.cn/api/v1/chat/completions` | 查询参数 `token` | ✅ openai |
 | `deepseek-web` | DeepSeek 网页版 | `chat.deepseek.com/api/v0/chat/completion` | Bearer + cookie | ✅ 已适配（PoW + patch 流） |
 | `tabbit` | Tabbit | `web.tabbit.com/api/v3/chat/runs` | Cookie + 签名头 | ⚠️ 待适配 |
-| `trae` | Trae | `api.trae.cn/cloudide/api/v3/...` | `X-Cloudide-Token` | ⚠️ 待适配 |
 | `catpaw` | 美团 CatPaw | `ai.catpaw.meituan.com` | Cookie | ⚠️ 待适配 |
 | `dangbei` | 当贝 AI | `ai-api.dangbei.net/ai-search` | Bearer | ⚠️ 待适配 |
-| `runable` | Runable | `api.runable.com/api/chat/text` | Bearer | ⚠️ 待适配 |
+| `runable` | Runable | `api.runable.com/api/chat/text` | Cookie | ✅ 已适配（AI SDK 流） |
 | `meoo` | 阿里 秒悟 Meoo | `meoo.com/api/v1/...` | Cookie | ⚠️ 待适配 |
 | `wenxin` | 百度 文心 | `chat.baidu.com/aichat/api/conversation` | Cookie | ⚠️ 待适配 |
 
@@ -703,11 +702,21 @@ DeepSeek 网页版不是 OpenAI 形状，三步都补上了：
 流式   → 21 个 chunk，首帧 role、增量 delta、末帧 finish_reason=stop、usage、[DONE]
 ```
 
+### 渠道适配器注册表
+
+需要协议转换的渠道在 `channels.go` 的 `channelAdapters` 里登记一行，实现形如：
+
+```go
+"runable": (*Server).runableForward,
+```
+
+`forward()` 会先看渠道有没有专属适配器：有就走协议转换（OpenAI 进、OpenAI 出），没有就走通用 OpenAI 透传。DeepSeek 与 Runable 就是按这个方式接进来的，后面每打通一家只需加一个文件 + 一行注册。
+
 ### 凭证与边界
 
 - 凭证存在本地 `config.json`（**不会**上传到任何地方）；`/admin/api/channels` 只返回遮罩值（`tk…mo`）
 - 不内置自动登录 / 抓 cookie：凭证需要你自己从合法持有的账号里取
-- 标 ⚠️ 的模板只做了地址与请求头登记，请求/响应协议仍需适配（DeepSeek 需要 PoW 挑战头与专用 prompt 标记，Trae/Tabbit 需要签名头与私有响应格式）
+- 标 ⚠️ 的模板只做了地址与请求头登记，请求/响应协议仍需适配（Tabbit 需要签名头，其余需要各自私有响应格式）
 - 接非标准协议时也可以用 `adapters`（路径 / 认证头 / 额外头）或自己在 `channels.go` 加一个 adapter 函数
 
 ## 31. 配置快照与回滚（新）
