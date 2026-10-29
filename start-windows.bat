@@ -6,14 +6,18 @@ rem - 停止请按 Ctrl+C，窗口会保留错误信息
 setlocal
 cd /d "%~dp0"
 
-set "EXE=%~dp0gateway-manager-windows-amd64.exe"
-if not exist "%EXE%" set "EXE=%~dp0gateway-manager.exe"
-if not exist "%EXE%" (
-  echo [错误] 同目录下找不到 gateway-manager-windows-amd64.exe
+set "EXE="
+for %%F in ("%~dp0gateway-manager.exe") do if exist "%%~fF" set "EXE=%%~fF"
+if not defined EXE for %%F in ("%~dp0gateway-manager-windows-amd64.exe") do if exist "%%~fF" set "EXE=%%~fF"
+if not defined EXE for %%F in ("%~dp0gateway-manager*amd64*.exe") do if exist "%%~fF" set "EXE=%%~fF"
+if not defined EXE for %%F in ("%~dp0*.exe") do if exist "%%~fF" set "EXE=%%~fF"
+if not defined EXE (
+  echo [错误] 同目录下找不到 gateway-manager 的 exe
   echo         请把本 bat 与 exe 放在同一个文件夹里再运行。
   pause
   exit /b 1
 )
+echo 使用程序: %EXE%
 
 if not exist "%~dp0config.json" (
   echo 首次运行：正在生成默认配置...

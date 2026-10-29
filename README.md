@@ -1,4 +1,4 @@
-# 网关管家 · 桌面版（gateway-manager v2.1.0）
+# 网关管家 · 桌面版（gateway-manager v2.1.1）
 
 **中文** | [English](README.en.md)
 
@@ -66,10 +66,10 @@ notepad config.json                                        # 填 upstreams[].bas
 ### Linux / macOS
 
 ```bash
-curl -LO https://github.com/fengye102/Gateway-Manager/releases/latest/download/gateway-manager-2.1.0-linux-amd64.tar.gz
-tar xzf gateway-manager-2.1.0-linux-amd64.tar.gz
-./gateway-manager-2.1.0-linux-amd64 init -config config.json
-./gateway-manager-2.1.0-linux-amd64 serve -config config.json
+curl -LO https://github.com/fengye102/Gateway-Manager/releases/latest/download/gateway-manager-2.1.1-linux-amd64.tar.gz
+tar xzf gateway-manager-2.1.1-linux-amd64.tar.gz
+./gateway-manager-2.1.1-linux-amd64 init -config config.json
+./gateway-manager-2.1.1-linux-amd64 serve -config config.json
 ```
 
 ### Docker
@@ -93,7 +93,7 @@ docker compose up -d     # gateway-manager + Prometheus + Grafana
 
 | 现象 | 处理 |
 | --- | --- |
-| 双击后窗口一闪就没 | 已修：v2.1.0 起会自动生成配置并常驻；旧版请用 `start-windows.bat` 或命令行启动 |
+| 双击后窗口一闪就没 | 已修：v2.1.1 起会自动生成配置并常驻；旧版请用 `start-windows.bat` 或命令行启动 |
 | 提示「Windows 已保护你的电脑」 | 右键 exe → 属性 → 解除锁定；或「更多信息 → 仍要运行」 |
 | 端口 7878 被占用 | `serve -config config.json -listen 127.0.0.1:8787` |
 | 杀软拦截 | 未签名二进制误报，可加排除项或自行编译 |

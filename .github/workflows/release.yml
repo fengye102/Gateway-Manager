@@ -51,18 +51,19 @@ jobs:
             arch="${target##*/}"
             ext=""
             [ "$os" = "windows" ] && ext=".exe"
-            bin="gateway-manager"
             name="gateway-manager-${VERSION}-${os}-${arch}"
-            GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "dist/${name}${ext}" .
+            stage="dist/stage-${os}-${arch}"
+            mkdir -p "$stage"
+            GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "${stage}/gateway-manager${ext}" .
             if [ "$os" = "windows" ]; then
-              (cd dist && zip -q "${name}.zip" "${name}${ext}" && rm -f "${name}${ext}")
+              cp start-windows.bat "$stage/"
+              (cd "$stage" && zip -qr "../${name}.zip" .)
             else
-              (cd dist && tar czf "${name}.tar.gz" "${name}" && rm -f "${name}")
+              (cd "$stage" && tar czf "../${name}.tar.gz" .)
             fi
+            rm -rf "$stage"
           done
-          cp start-windows.bat dist/
-          (cd dist && sed -i 's/\r$//' start-windows.bat || true)
-          (cd dist && sha256sum * > SHA256SUMS.txt)
+          (cd dist && sha256sum *.zip *.tar.gz > SHA256SUMS.txt)
           ls -lh dist
 
       - name: 创建 Release

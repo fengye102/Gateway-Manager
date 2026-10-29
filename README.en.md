@@ -1,4 +1,4 @@
-# Gateway Manager (gateway-manager) v2.1.0
+# Gateway Manager (gateway-manager) v2.1.1
 
 [中文](README.md) | **English**
 
@@ -42,7 +42,7 @@ plane around it:
 
 | Symptom | Fix |
 | --- | --- |
-| window flashes and closes | fixed in v2.1.0 (auto-init + stays open); older builds: use `start-windows.bat` |
+| window flashes and closes | fixed in v2.1.1 (auto-init + stays open); older builds: use `start-windows.bat` |
 | "Windows protected your PC" | Unblock the file, or More info → Run anyway |
 | port 7878 busy | `serve -config config.json -listen 127.0.0.1:8787` |
 | antivirus warning | unsigned Go binary false positive; add exclusion or build locally |
@@ -66,7 +66,7 @@ docker run -d --name gateway-manager -p 7878:7878 -v "$PWD/data:/data" gateway-m
 
 ```bash
 # Linux / macOS
-curl -LO https://github.com/fengye102/Gateway-Manager/releases/latest/download/gateway-manager-2.1.0-linux-amd64.tar.gz
+curl -LO https://github.com/fengye102/Gateway-Manager/releases/latest/download/gateway-manager-2.1.1-linux-amd64.tar.gz
 chmod +x gateway-manager-linux-amd64 && ./gateway-manager-linux-amd64 init -config config.json
 ./gateway-manager-linux-amd64 serve -config config.json
 ```
