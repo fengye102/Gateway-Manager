@@ -275,30 +275,13 @@ func normalizeConfig(c *Config) {
 		c.Rules = []Rule{}
 	}
 	if c.Templates == nil {
-		c.Adapters = []Adapter{
-			{
-				ID:           "anthropic-style",
-				MatchBaseURL: "https://api.anthropic.com",
-				MessagesPath: "/v1/messages",
-				ModelsPath:   "/v1/models",
-				AuthHeader:   "x-api-key",
-				AuthPrefix:   "",
-				ExtraHeaders: map[string]string{"anthropic-version": "2023-06-01"},
-			},
-		}
-		c.Channels = []Channel{
-			{
-				ID: "zhipu", Preset: "zhipu-autoclaw", Name: "智谱 AutoGLM",
-				Token: "", Enabled: false, Priority: 5,
-				Headers: map[string]string{},
-			},
-			{
-				ID: "zen", Preset: "opencode-zen", Name: "OpenCode Zen 匿名档",
-				Token: "public", Enabled: true, Priority: 10,
-				Headers: map[string]string{},
-			},
-		}
 		c.Templates = []ProfileTemplate{}
+	}
+	if c.Adapters == nil {
+		c.Adapters = []Adapter{}
+	}
+	if c.Channels == nil {
+		c.Channels = []Channel{}
 	}
 	for i := range c.Upstreams {
 		u := &c.Upstreams[i]
@@ -637,6 +620,29 @@ func SampleConfig() *Config {
 			Category:    "自定义",
 			Instruction: "用第一人称、口语化、简短句子回答；不确定就说不确定。",
 			Tags:        []string{"个人"},
+		},
+	}
+	c.Adapters = []Adapter{
+		{
+			ID:           "anthropic-style",
+			MatchBaseURL: "https://api.anthropic.com",
+			MessagesPath: "/v1/messages",
+			ModelsPath:   "/v1/models",
+			AuthHeader:   "x-api-key",
+			AuthPrefix:   "",
+			ExtraHeaders: map[string]string{"anthropic-version": "2023-06-01"},
+		},
+	}
+	c.Channels = []Channel{
+		{
+			ID: "zhipu", Preset: "zhipu-autoclaw", Name: "智谱 AutoGLM",
+			Token: "", BaseURL: "", Models: []string{"glm-5"}, Headers: map[string]string{},
+			Priority: 5, Weight: 0, Enabled: false,
+		},
+		{
+			ID: "zen", Preset: "opencode-zen", Name: "OpenCode Zen 匿名档",
+			Token: "public", BaseURL: "", Models: []string{}, Headers: map[string]string{},
+			Priority: 10, Weight: 0, Enabled: true,
 		},
 	}
 	return c
