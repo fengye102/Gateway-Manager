@@ -39,7 +39,7 @@ jobs:
         run: go test -count=1 ./...
 
       - name: go build
-        run: go build -trimpath -o /tmp/pojiagw-${{ matrix.os }}${{ (matrix.os == 'windows-latest' && '.exe') || '' }} .
+        run: go build -trimpath -o dist/ .
 
   cross-build:
     runs-on: ubuntu-latest
