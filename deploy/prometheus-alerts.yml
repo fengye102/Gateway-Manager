@@ -1,10 +1,10 @@
-# pojiagw 告警规则（放到 Prometheus rule_files 指向的目录）
+# gateway-manager 告警规则（放到 Prometheus rule_files 指向的目录）
 groups:
-  - name: pojiagw.upstream
+  - name: gateway-manager.upstream
     interval: 30s
     rules:
       - alert: PojiagwUpstreamDown
-        expr: pojiagw_upstream_healthy == 0
+        expr: gateway_manager_upstream_healthy == 0
         for: 2m
         labels:
           severity: warning
@@ -14,7 +14,7 @@ groups:
           description: "{{ $labels.name }} 连续失败已进入冷却，检查 base_url / key / models 配置。"
 
       - alert: PojiagwAllKeysCooling
-        expr: sum by (upstream) (pojiagw_key_cooling) >= count by (upstream) (pojiagw_key_score) and count by (upstream) (pojiagw_key_score) > 0
+        expr: sum by (upstream) (gateway_manager_key_cooling) >= count by (upstream) (gateway_manager_key_score) and count by (upstream) (gateway_manager_key_score) > 0
         for: 2m
         labels:
           severity: critical
@@ -24,7 +24,7 @@ groups:
           description: "该上游已无可用的 key，请求会被跳过。检查 401/429 日志与配额。"
 
       - alert: PojiagwKeyScoreLow
-        expr: pojiagw_key_score < 30
+        expr: gateway_manager_key_score < 30
         for: 5m
         labels:
           severity: warning
@@ -34,7 +34,7 @@ groups:
           description: "上游 {{ $labels.upstream }} 的该 key 连续失败，正在被降权。"
 
       - alert: PojiagwUpstreamErrorRatio
-        expr: (sum(rate(pojiagw_upstream_errors_total[5m])) / clamp_min(sum(rate(pojiagw_requests_total[5m])), 0.0001)) > 0.2
+        expr: (sum(rate(gateway_manager_upstream_errors_total[5m])) / clamp_min(sum(rate(gateway_manager_requests_total[5m])), 0.0001)) > 0.2
         for: 10m
         labels:
           severity: critical
@@ -43,11 +43,11 @@ groups:
           summary: "上游错误率超过 20%"
           description: "近 10 分钟错误占比 {{ $value | humanizePercentage }}，检查上游可用性与 key 配额。"
 
-  - name: pojiagw.traffic
+  - name: gateway-manager.traffic
     interval: 30s
     rules:
       - alert: PojiagwP95LatencyHigh
-        expr: histogram_quantile(0.95, sum by (le) (rate(pojiagw_upstream_duration_seconds_bucket[5m]))) > 15
+        expr: histogram_quantile(0.95, sum by (le) (rate(gateway_manager_upstream_duration_seconds_bucket[5m]))) > 15
         for: 10m
         labels:
           severity: warning
@@ -57,7 +57,7 @@ groups:
           description: "当前 p95 = {{ $value }}s，考虑调低超时、换上游或降级分流权重。"
 
       - alert: PojiagwAuthFailureBurst
-        expr: sum(increase(pojiagw_auth_failures_total[10m])) > 20
+        expr: sum(increase(gateway_manager_auth_failures_total[10m])) > 20
         for: 1m
         labels:
           severity: warning
@@ -66,11 +66,11 @@ groups:
           summary: "代理鉴权失败突增"
           description: "10 分钟内 {{ $value }} 次鉴权失败，检查 access_keys 是否被扫描或客户端配置错误。"
 
-  - name: pojiagw.rules-engine
+  - name: gateway-manager.rules-engine
     interval: 30s
     rules:
       - alert: PojiagwRuleDenySpike
-        expr: sum(rate(pojiagw_rule_denies_total[5m])) > 5
+        expr: sum(rate(gateway_manager_rule_denies_total[5m])) > 5
         for: 5m
         labels:
           severity: warning
@@ -80,7 +80,7 @@ groups:
           description: "当前 {{ $value }}/s 被规则拦下，打开控制台「规则-拦截回放」看具体请求。"
 
       - alert: PojiagwInjectConflict
-        expr: sum(increase(pojiagw_inject_conflict_total[10m])) > 5
+        expr: sum(increase(gateway_manager_inject_conflict_total[10m])) > 5
         for: 5m
         labels:
           severity: info
@@ -89,11 +89,11 @@ groups:
           summary: "注入结构冲突"
           description: "请求里的 instructions/system 类型与策略不兼容，检查客户端请求体。"
 
-  - name: pojiagw.self
+  - name: gateway-manager.self
     interval: 30s
     rules:
       - alert: PojiagwStateSaveStale
-        expr: pojiagw_state_last_save_timestamp > 0 and (time() - pojiagw_state_last_save_timestamp) > 900
+        expr: gateway_manager_state_last_save_timestamp > 0 and (time() - gateway_manager_state_last_save_timestamp) > 900
         for: 10m
         labels:
           severity: warning

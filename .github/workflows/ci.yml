@@ -55,16 +55,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/pojiagw-windows-amd64.exe .
-          GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/pojiagw-windows-arm64.exe .
-          GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/pojiagw-linux-amd64 .
-          GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/pojiagw-linux-arm64 .
-          GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/pojiagw-darwin-amd64 .
-          GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/pojiagw-darwin-arm64 .
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/gateway-manager-windows-amd64.exe .
+          GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/gateway-manager-windows-arm64.exe .
+          GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/gateway-manager-linux-amd64 .
+          GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/gateway-manager-linux-arm64 .
+          GOOS=darwin  GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/gateway-manager-darwin-amd64 .
+          GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/gateway-manager-darwin-arm64 .
           ls -lh dist
       - uses: actions/upload-artifact@v4
         with:
-          name: pojiagw-binaries
+          name: gateway-manager-binaries
           path: dist/
 
   docker:
@@ -73,13 +73,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: docker build
-        run: docker build -t pojiagw:ci .
+        run: docker build -t gateway-manager:ci .
 
       - name: image smoke test
         run: |
           set -euxo pipefail
-          docker run --rm pojiagw:ci version
-          docker run -d --name gw -p 7878:7878 pojiagw:ci
+          docker run --rm gateway-manager:ci version
+          docker run -d --name gw -p 7878:7878 gateway-manager:ci
           ok=0
           for i in $(seq 1 20); do
             if curl -fsS http://127.0.0.1:7878/health; then ok=1; break; fi

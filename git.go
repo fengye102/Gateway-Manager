@@ -35,10 +35,10 @@ func runGit(dir string, args ...string) (string, error) {
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
-		"GIT_AUTHOR_NAME=pojiagw",
-		"GIT_AUTHOR_EMAIL=pojiagw@localhost",
-		"GIT_COMMITTER_NAME=pojiagw",
-		"GIT_COMMITTER_EMAIL=pojiagw@localhost",
+		"GIT_AUTHOR_NAME=gateway-manager",
+		"GIT_AUTHOR_EMAIL=gateway-manager@localhost",
+		"GIT_COMMITTER_NAME=gateway-manager",
+		"GIT_COMMITTER_EMAIL=gateway-manager@localhost",
 		"GIT_TERMINAL_PROMPT=0",
 	)
 	var stdout, stderr bytes.Buffer
@@ -64,8 +64,8 @@ func ensureGitRepo(dir string) error {
 	if _, err := runGit(dir, "init"); err != nil {
 		return err
 	}
-	_, _ = runGit(dir, "config", "user.name", "pojiagw")
-	_, _ = runGit(dir, "config", "user.email", "pojiagw@localhost")
+	_, _ = runGit(dir, "config", "user.name", "gateway-manager")
+	_, _ = runGit(dir, "config", "user.email", "gateway-manager@localhost")
 	return nil
 }
 

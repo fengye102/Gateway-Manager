@@ -560,7 +560,7 @@ func SampleConfig() *Config {
 			Type:        ruleTypeHeader,
 			Cond:        nil,
 			HeaderName:  "X-Gateway",
-			HeaderValue: "pojiagw",
+			HeaderValue: "gateway-manager",
 		},
 		{
 			ID:          "rule-brief-mini",

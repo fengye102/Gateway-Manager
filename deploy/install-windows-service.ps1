@@ -1,10 +1,10 @@
 # 以 Windows 服务方式常驻运行（需要管理员 PowerShell）
-# 用法： .\deploy\install-windows-service.ps1 -ExePath D:\pojiagw\pojiagw.exe -ConfigPath D:\pojiagw\config.json
+# 用法： .\deploy\install-windows-service.ps1 -ExePath D:\gateway-manager\gateway-manager.exe -ConfigPath D:\gateway-manager\config.json
 
 param(
     [Parameter(Mandatory = $true)][string]$ExePath,
     [Parameter(Mandatory = $true)][string]$ConfigPath,
-    [string]$ServiceName = 'pojiagw'
+    [string]$ServiceName = 'gateway-manager'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,7 +17,7 @@ if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
     Start-Sleep -Seconds 1
 }
 
-sc.exe create $ServiceName binPath= $binPath start= auto DisplayName= "pojiagw gateway manager" | Out-Null
+sc.exe create $ServiceName binPath= $binPath start= auto DisplayName= "gateway-manager gateway manager" | Out-Null
 sc.exe failure $ServiceName reset= 86400 actions= restart/3000/restart/3000/restart/3000 | Out-Null
 Start-Service -Name $ServiceName
 Write-Host "service $ServiceName installed and started"

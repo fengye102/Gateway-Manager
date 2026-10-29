@@ -614,7 +614,7 @@ func (s *Store) StatusPayload() map[string]any {
 	cfg := s.Config()
 	stats := s.StatsSnapshot()
 	return map[string]any{
-		"service":          "pojiagw",
+		"service":          "gateway-manager",
 		"version":          version,
 		"uptime":           time.Since(time.Unix(stats.StartedAt, 0)).Round(time.Second).String(),
 		"bind":             cfg.Server.Bind,
@@ -652,7 +652,7 @@ func (s *Store) SetPersistEnabled(on bool) {
 
 func defaultStatePath(cfgPath string) string {
 	if cfgPath == "" {
-		return "pojiagw.state.json"
+		return "gateway-manager.state.json"
 	}
 	base := filepath.Base(cfgPath)
 	ext := filepath.Ext(base)

@@ -144,7 +144,7 @@ const adminIndexHTML = `
   <section id="tab-upstreams">
     <div class="row">
       <button id="checkNow">立即健康检查</button>
-      <span class="muted">同优先级内按 <b>权重</b> 分流（0 = 均分）；分流次数看 /metrics 的 pojiagw_routed_total</span>
+      <span class="muted">同优先级内按 <b>权重</b> 分流（0 = 均分）；分流次数看 /metrics 的 gateway_manager_routed_total</span>
       <span class="muted">key 池按健康分选路：401/403 重罚 5 倍冷却，429 轻度冷却，连续 2 次失败进入冷却</span>
     </div>
     <table id="upTable"><thead><tr>
@@ -236,7 +236,7 @@ const adminIndexHTML = `
         <button class="primary" id="dslApply">解析并应用</button>
         <span class="muted" id="dslHint"></span>
       </div>
-      <textarea id="dslBox" spellcheck="false" style="min-height:220px" placeholder="- id: r-tag&#10;  name: 打标记&#10;  type: header&#10;  action:&#10;    header_name: X-Gateway&#10;    header_value: pojiagw"></textarea>
+      <textarea id="dslBox" spellcheck="false" style="min-height:220px" placeholder="- id: r-tag&#10;  name: 打标记&#10;  type: header&#10;  action:&#10;    header_name: X-Gateway&#10;    header_value: gateway-manager"></textarea>
     </details>
 
     <div class="panel">
@@ -365,7 +365,7 @@ document.querySelectorAll('nav button').forEach(function(b){
   });
 });
 document.getElementById('saveToken').addEventListener('click', function(){
-  try { localStorage.setItem('pojiagw_token', token()); } catch(e){}
+  try { localStorage.setItem('gateway_manager_token', token()); } catch(e){}
   load();
 });
 document.getElementById('refresh').addEventListener('click', load);
@@ -1139,7 +1139,7 @@ function loadConfig(){
 }
 
 try {
-  var saved = localStorage.getItem('pojiagw_token');
+  var saved = localStorage.getItem('gateway_manager_token');
   if (saved) { document.getElementById('token').value = saved; }
 } catch(e){}
 

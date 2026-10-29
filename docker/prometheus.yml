@@ -2,7 +2,7 @@ global:
   scrape_interval: 15s
 
 scrape_configs:
-  - job_name: pojiagw
+  - job_name: gateway-manager
     metrics_path: /metrics
     static_configs:
-      - targets: ["pojiagw:7878"]
+      - targets: ["gateway-manager:7878"]

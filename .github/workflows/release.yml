@@ -51,8 +51,8 @@ jobs:
             arch="${target##*/}"
             ext=""
             [ "$os" = "windows" ] && ext=".exe"
-            bin="pojiagw"
-            name="pojiagw-${VERSION}-${os}-${arch}"
+            bin="gateway-manager"
+            name="gateway-manager-${VERSION}-${os}-${arch}"
             GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "dist/${name}${ext}" .
             if [ "$os" = "windows" ]; then
               (cd dist && zip -q "${name}.zip" "${name}${ext}" && rm -f "${name}${ext}")
@@ -60,6 +60,8 @@ jobs:
               (cd dist && tar czf "${name}.tar.gz" "${name}" && rm -f "${name}")
             fi
           done
+          cp start-windows.bat dist/
+          (cd dist && sed -i 's/\r$//' start-windows.bat || true)
           (cd dist && sha256sum * > SHA256SUMS.txt)
           ls -lh dist
 

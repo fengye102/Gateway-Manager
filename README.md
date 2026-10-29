@@ -1,4 +1,4 @@
-# 网关管家 · 桌面版（pojiagw v2.0.1）
+# 网关管家 · 桌面版（gateway-manager v2.1.0）
 
 **中文** | [English](README.en.md)
 
@@ -17,13 +17,13 @@
 - **状态持久化**：key 健康分 / 冷却 / 规则命中统计落盘，重启不丢（只存指纹，不存明文 key）
 - **Prometheus `/metrics`**：请求、上游、key、规则、快照全维度指标 + **延迟直方图**（p50/p95/p99 直接算），附 Grafana 看板 JSON
 - **拦截回放**：被规则拦下的请求留档（Header 脱敏），控制台一键复现看新规则会不会放行
-- **A/B 灰度**：同优先级上游按 @@weight@@ 比例分流，带 @@pojiagw_routed_total@@ 分流指标
+- **A/B 灰度**：同优先级上游按 @@weight@@ 比例分流，带 @@gateway_manager_routed_total@@ 分流指标
 - **告警规则**：@@deploy/prometheus-alerts.yml@@ 9 条（上游挂掉 / key 全冷却 / p95 超阈 / 拦截激增 / 鉴权爆破…）
 - **耗时分解**：排队（选路+许可）· 上游首字节 TTFB · 响应体转发，三个直方图分别可算分位
 - **自定义健康探测**：每个上游可配 @@probe@@（路径/方法/期望状态码/期望内容）
 - **成功请求采样**：按 N 抽样留档（脱敏），用于回归验证
 - **规则书 DSL**：纯文本写规则，与拖拽 UI 双向同步，错误带行号
-- **多实例联邦**：一个控制台并行汇总多个 pojiagw 实例（版本/请求/上游健康）
+- **多实例联邦**：一个控制台并行汇总多个 gateway-manager 实例（版本/请求/上游健康）
 - **上游额度预算**：日请求 / 日 token 预算，用尽自动跳过该上游并暴露指标
 - **批量回归**：拿历史采样/回放批量跑当前规则链，输出拦截率与规则命中分布
 - **跨实例转发**：联邦 peer 可声明为上游，按权重/优先级把流量打到别的实例
@@ -44,25 +44,60 @@
 
 ## 1. 快速开始
 
+### Windows（推荐：下载 zip 解压）
+
+1. 到 [Releases](https://github.com/fengye102/Gateway-Manager/releases/latest) 下载 `gateway-manager-<版本>-windows-amd64.zip`
+2. **右键 zip → 属性 → 勾选「解除锁定」**（从网上下载的文件会被 SmartScreen 标记，不解除会被拦）
+3. 解压后双击 `gateway-manager-windows-amd64.exe` 或 `start-windows.bat`
+   - 首次运行会在同目录**自动生成 `config.json`**，然后直接开始监听 `127.0.0.1:7878`
+   - 会自动打开控制台 `http://127.0.0.1:7878/ui`；关闭窗口（或 Ctrl+C）即停止
+   - 出错时窗口不会一闪而过，会停在「按回车键退出...」
+
 ```powershell
-cd "D:\code\Program\Android Reverse Workbench\workspace\gateway-manager"
-.\build\pojiagw.exe init -config config.json
-.\build\pojiagw.exe discover -priority
-.\build\pojiagw.exe serve -config config.json
+# 命令行方式（等价）
+.\gateway-manager-windows-amd64.exe init -config config.json
+.\gateway-manager-windows-amd64.exe discover -priority     # 扫本机已有网关
+notepad config.json                                        # 填 upstreams[].base_url / api_keys
+.\gateway-manager-windows-amd64.exe serve -config config.json
 ```
 
+> 如果 Windows Defender / 国产杀软报毒：未签名 Go 二进制常被误报，可添加排除项，或改用 `go build` 自行编译；发行包附带 `SHA256SUMS.txt` 可校验完整性。
+
+### Linux / macOS
+
 ```bash
-chmod +x build/pojiagw-linux-amd64
-./build/pojiagw-linux-amd64 serve -config config.json
+curl -LO https://github.com/fengye102/Gateway-Manager/releases/latest/download/gateway-manager-2.1.0-linux-amd64.tar.gz
+tar xzf gateway-manager-2.1.0-linux-amd64.tar.gz
+./gateway-manager-2.1.0-linux-amd64 init -config config.json
+./gateway-manager-2.1.0-linux-amd64 serve -config config.json
 ```
+
+### Docker
+
+```bash
+docker compose up -d     # gateway-manager + Prometheus + Grafana
+```
+
+启动后：
 
 ```
  监听      : 127.0.0.1:7878
  OpenAI    : http://127.0.0.1:7878/v1/chat/completions
  控制台    : http://127.0.0.1:7878/ui
+ 指标      : http://127.0.0.1:7878/metrics
 ```
 
 客户端 base_url 指向 `http://127.0.0.1:7878/v1` 即可；配了 `access_keys` 就带 `Authorization: Bearer <key>` 或 `x-api-key`。
+
+### 常见启动问题
+
+| 现象 | 处理 |
+| --- | --- |
+| 双击后窗口一闪就没 | 已修：v2.1.0 起会自动生成配置并常驻；旧版请用 `start-windows.bat` 或命令行启动 |
+| 提示「Windows 已保护你的电脑」 | 右键 exe → 属性 → 解除锁定；或「更多信息 → 仍要运行」 |
+| 端口 7878 被占用 | `serve -config config.json -listen 127.0.0.1:8787` |
+| 杀软拦截 | 未签名二进制误报，可加排除项或自行编译 |
+| 想局域网访问 | 把 `server.bind` 改 `0.0.0.0`，并务必设置 `access_keys` 与 `admin_token` |
 
 ## 2. 子命令
 
@@ -211,7 +246,7 @@ POST /v1/chat/completions
 运行状态落在一个独立的状态文件里（默认与配置同目录，例如 @@config.state.json@@），可用 @@-state@@ 指定：
 
 @@@bash
-pojiagw serve -config config.json -state /var/lib/pojiagw/state.json
+gateway-manager serve -config config.json -state /var/lib/gateway-manager/state.json
 @@@
 
 - 内容：每个上游的 **key 指纹 + 评分 + 成功/失败 + 连续失败 + 冷却截止 + 最近状态码 + 延迟 EMA + 请求数**，以及**规则命中/跳过/拦截计数**
@@ -245,50 +280,50 @@ curl -s http://127.0.0.1:7878/metrics | head
 
 | 指标 | 类型 | 说明 |
 | --- | --- | --- |
-| @@pojiagw_info{version,bind,port,key_strategy}@@ | gauge | 构建与监听信息（恒 1） |
-| @@pojiagw_uptime_seconds@@ | gauge | 运行时长 |
-| @@pojiagw_requests_total@@ | counter | 代理请求总数 |
-| @@pojiagw_profile_injections_total@@ / @@pojiagw_rule_injections_total@@ | counter | 策略 / 规则注入次数 |
-| @@pojiagw_no_profile_total@@ / @@pojiagw_inject_conflict_total@@ | counter | 未注入 / 注入冲突 |
-| @@pojiagw_rule_denies_total@@ / @@pojiagw_auth_failures_total@@ / @@pojiagw_upstream_errors_total@@ / @@pojiagw_key_skips_total@@ | counter | 拦截 / 鉴权失败 / 上游失败 / key 全冷却跳过 |
-| @@pojiagw_upstream_{enabled,healthy,cooldown_seconds,requests_total,successes_total,failures_total,inflight,latency_ms,models}{upstream,name}@@ | gauge/counter | 每上游状态 |
-| @@pojiagw_key_{score,successes_total,failures_total,cooling,requests_total}{upstream,key}@@ | gauge/counter | 每把 key（label 用遮罩值） |
-| @@pojiagw_rule_{matched_total,skipped_total,denied_total,hit_ratio}{rule,name}@@ | counter/gauge | 每规则热度 |
-| @@pojiagw_config_{upstreams,profiles,rules}@@ | gauge | 配置规模 |
-| @@pojiagw_state_last_save_timestamp@@ / @@pojiagw_snapshots@@ / @@pojiagw_replay_entries@@ | gauge | 状态落盘时间 / 快照数量 / 回放条数 |
-| @@pojiagw_request_duration_seconds_bucket{le}@@ / @@_sum@@ / @@_count@@ | histogram | 网关侧总耗时（0.05s…180s 共 12 桶 + @@+Inf@@） |
-| @@pojiagw_upstream_duration_seconds_{bucket,sum,count}{upstream,name}@@ | histogram | 上游调用耗时 |
-| @@pojiagw_upstream_responses_total{upstream,name,code}@@ | counter | 上游响应码分布 |
-| @@pojiagw_requests_by_endpoint_total{endpoint}@@ | counter | 按端点（chat.completions / responses / messages）的请求数 |
-| @@pojiagw_upstream_weight{upstream,name}@@ | gauge | 灰度权重 |
-| @@pojiagw_routed_total{model,upstream,name}@@ | counter | 按模型统计的实际分流次数（验证灰度比例） |
-| @@pojiagw_queue_duration_seconds_{bucket,sum,count}@@ | histogram | 排队耗时（选路 + 许可 + key 选择） |
-| @@pojiagw_upstream_ttfb_seconds_{bucket,sum,count}@@ | histogram | 上游首字节耗时 |
-| @@pojiagw_relay_duration_seconds_{bucket,sum,count}@@ | histogram | 响应体转发耗时 |
-| @@pojiagw_budget_{requests,tokens}_{used,limit}{upstream,name}@@ | gauge | 日预算用量与上限 |
-| @@pojiagw_budget_exhausted{upstream,name}@@ | gauge | 预算是否用尽（1/0） |
-| @@pojiagw_tokens_total{upstream,name}@@ | counter | 按上游累计的真实 token 用量（来自响应 usage） |
-| @@pojiagw_mirror_total{upstream,name,result}@@ | counter | 影子投递结果（ok / fail） |
-| @@pojiagw_upstream_circuit{upstream,name,state}@@ | gauge | 熔断状态（closed/half_open/open 各一行，当前态为 1） |
-| @@pojiagw_experiment_total{experiment,arm,result}@@ | counter | 实验各臂请求数（result=all/error） |
-| @@pojiagw_experiment_{latency_ms,tokens}_sum{experiment,arm}@@ | counter | 实验各臂累计耗时 / token |
+| @@gateway_manager_info{version,bind,port,key_strategy}@@ | gauge | 构建与监听信息（恒 1） |
+| @@gateway_manager_uptime_seconds@@ | gauge | 运行时长 |
+| @@gateway_manager_requests_total@@ | counter | 代理请求总数 |
+| @@gateway_manager_profile_injections_total@@ / @@gateway_manager_rule_injections_total@@ | counter | 策略 / 规则注入次数 |
+| @@gateway_manager_no_profile_total@@ / @@gateway_manager_inject_conflict_total@@ | counter | 未注入 / 注入冲突 |
+| @@gateway_manager_rule_denies_total@@ / @@gateway_manager_auth_failures_total@@ / @@gateway_manager_upstream_errors_total@@ / @@gateway_manager_key_skips_total@@ | counter | 拦截 / 鉴权失败 / 上游失败 / key 全冷却跳过 |
+| @@gateway_manager_upstream_{enabled,healthy,cooldown_seconds,requests_total,successes_total,failures_total,inflight,latency_ms,models}{upstream,name}@@ | gauge/counter | 每上游状态 |
+| @@gateway_manager_key_{score,successes_total,failures_total,cooling,requests_total}{upstream,key}@@ | gauge/counter | 每把 key（label 用遮罩值） |
+| @@gateway_manager_rule_{matched_total,skipped_total,denied_total,hit_ratio}{rule,name}@@ | counter/gauge | 每规则热度 |
+| @@gateway_manager_config_{upstreams,profiles,rules}@@ | gauge | 配置规模 |
+| @@gateway_manager_state_last_save_timestamp@@ / @@gateway_manager_snapshots@@ / @@gateway_manager_replay_entries@@ | gauge | 状态落盘时间 / 快照数量 / 回放条数 |
+| @@gateway_manager_request_duration_seconds_bucket{le}@@ / @@_sum@@ / @@_count@@ | histogram | 网关侧总耗时（0.05s…180s 共 12 桶 + @@+Inf@@） |
+| @@gateway_manager_upstream_duration_seconds_{bucket,sum,count}{upstream,name}@@ | histogram | 上游调用耗时 |
+| @@gateway_manager_upstream_responses_total{upstream,name,code}@@ | counter | 上游响应码分布 |
+| @@gateway_manager_requests_by_endpoint_total{endpoint}@@ | counter | 按端点（chat.completions / responses / messages）的请求数 |
+| @@gateway_manager_upstream_weight{upstream,name}@@ | gauge | 灰度权重 |
+| @@gateway_manager_routed_total{model,upstream,name}@@ | counter | 按模型统计的实际分流次数（验证灰度比例） |
+| @@gateway_manager_queue_duration_seconds_{bucket,sum,count}@@ | histogram | 排队耗时（选路 + 许可 + key 选择） |
+| @@gateway_manager_upstream_ttfb_seconds_{bucket,sum,count}@@ | histogram | 上游首字节耗时 |
+| @@gateway_manager_relay_duration_seconds_{bucket,sum,count}@@ | histogram | 响应体转发耗时 |
+| @@gateway_manager_budget_{requests,tokens}_{used,limit}{upstream,name}@@ | gauge | 日预算用量与上限 |
+| @@gateway_manager_budget_exhausted{upstream,name}@@ | gauge | 预算是否用尽（1/0） |
+| @@gateway_manager_tokens_total{upstream,name}@@ | counter | 按上游累计的真实 token 用量（来自响应 usage） |
+| @@gateway_manager_mirror_total{upstream,name,result}@@ | counter | 影子投递结果（ok / fail） |
+| @@gateway_manager_upstream_circuit{upstream,name,state}@@ | gauge | 熔断状态（closed/half_open/open 各一行，当前态为 1） |
+| @@gateway_manager_experiment_total{experiment,arm,result}@@ | counter | 实验各臂请求数（result=all/error） |
+| @@gateway_manager_experiment_{latency_ms,tokens}_sum{experiment,arm}@@ | counter | 实验各臂累计耗时 / token |
 
 ### Grafana 看板
 
 @@@bash
-# 1) 让 Prometheus 抓 pojiagw
-cp deploy/prometheus.yml /etc/prometheus/conf.d/pojiagw.yml   # 或合并进现有 scrape_configs
+# 1) 让 Prometheus 抓 gateway-manager
+cp deploy/prometheus.yml /etc/prometheus/conf.d/gateway-manager.yml   # 或合并进现有 scrape_configs
 # 2) Grafana → Dashboards → Import → 上传 deploy/grafana-dashboard.json，数据源选 Prometheus
 @@@
 
-看板 @@uid: pojiagw-main@@，12 个面板：QPS、上游健康、注入构成、拦截/错误、配置规模、运行时长、上游延迟 p95/p50、按端点速率、注入与拦截速率、上游响应码、key 健康评分表、规则命中占比条形图。
+看板 @@uid: gateway-manager-main@@，12 个面板：QPS、上游健康、注入构成、拦截/错误、配置规模、运行时长、上游延迟 p95/p50、按端点速率、注入与拦截速率、上游响应码、key 健康评分表、规则命中占比条形图。
 
 ## 11. A/B 灰度分流（新）
 
 - 给同 @@priority@@ 的上游填 @@weight@@：@@canary:1 / stable:9@@ ≈ 10% / 90%
 - 选路：加权均匀铺开（用请求序号对权重和取模，不是随机，比例稳定可复现）；权重全为 0 时退回均分轮转
-- 观测：@@pojiagw_routed_total{model,upstream,name}@@ 累加实际分流次数，@@pojiagw_upstream_weight@@ 暴露当前权重；控制台「上游」表新增权重列
-- 灰度做法：先给 canary 权重 1、stable 权重 9，观察 @@pojiagw_upstream_responses_total{code!="200"}@@ 与 @@pojiagw_upstream_duration_seconds@@ 分位；没问题就调成 5:5，最后 9:1
+- 观测：@@gateway_manager_routed_total{model,upstream,name}@@ 累加实际分流次数，@@gateway_manager_upstream_weight@@ 暴露当前权重；控制台「上游」表新增权重列
+- 灰度做法：先给 canary 权重 1、stable 权重 9，观察 @@gateway_manager_upstream_responses_total{code!="200"}@@ 与 @@gateway_manager_upstream_duration_seconds@@ 分位；没问题就调成 5:5，最后 9:1
 
 ## 12. 告警规则（新）
 
@@ -301,9 +336,9 @@ promtool check rules /etc/prometheus/rules/prometheus-alerts.yml
 
 | 告警 | 触发条件（简写） | 级别 |
 | --- | --- | --- |
-| PojiagwUpstreamDown | @@pojiagw_upstream_healthy == 0@@ 持续 2m | warning |
+| PojiagwUpstreamDown | @@gateway_manager_upstream_healthy == 0@@ 持续 2m | warning |
 | PojiagwAllKeysCooling | 该上游所有 key 的 @@key_cooling@@ 全为 1 | critical |
-| PojiagwKeyScoreLow | @@pojiagw_key_score < 30@@ 持续 5m | warning |
+| PojiagwKeyScoreLow | @@gateway_manager_key_score < 30@@ 持续 5m | warning |
 | PojiagwUpstreamErrorRatio | 5m 错误率 / 请求率 > 20% | critical |
 | PojiagwP95LatencyHigh | @@histogram_quantile(0.95,…) > 15s@@ 持续 10m | warning |
 | PojiagwAuthFailureBurst | 10m 鉴权失败 > 20 次 | warning |
@@ -321,7 +356,7 @@ ttfb   上游首字节（含建连、TLS、上游排队）
 relay  响应体回写（流式场景 = 整个流的时长）
 @@@
 
-- 三段相加 ≈ @@pojiagw_request_duration_seconds@@，差距大会暴露测量误差或客户端慢
+- 三段相加 ≈ @@gateway_manager_request_duration_seconds@@，差距大会暴露测量误差或客户端慢
 - 典型用法：@@ttfb@@ 高 → 上游/网络慢；@@queue@@ 高 → 并发或 RPM 打满；@@relay@@ 高 → 流式输出长或客户端读得慢
 
 ## 14. 自定义健康探测（新）
@@ -342,7 +377,7 @@ relay  响应体回写（流式场景 = 整个流的时长）
 
 - 不配 @@probe@@ 时按老规矩 @@GET /v1/models@@（并解析模型列表）
 - 配了 @@probe@@ 就完全按它来：方法支持 GET/HEAD/POST/PUT/PATCH/DELETE（写方法带空 JSON 体），状态码白名单，可选响应体关键串
-- 探测成功的模型列表照旧写进 @@pojiagw_upstream_models@@ 与 @@/v1/models@@ 聚合
+- 探测成功的模型列表照旧写进 @@gateway_manager_upstream_models@@ 与 @@/v1/models@@ 聚合
 - 每 @@health_interval_seconds@@ 秒跑一次；控制台「上游」页显示最近结果与错误
 
 ## 15. 成功请求采样（新）
@@ -363,7 +398,7 @@ relay  响应体回写（流式场景 = 整个流的时长）
   type: header
   action:
     header_name: X-Gateway
-    header_value: pojiagw
+    header_value: gateway-manager
 
 - id: r-deny-danger
   name: 拦截危险模型
@@ -418,7 +453,7 @@ relay  响应体回写（流式场景 = 整个流的时长）
 - 按自然日（本地时区）计数，跨天自动清零
 - 请求数精确计数；token 是**估算值**（请求体字节 / 4），只作预算护栏
 - 用尽后该上游被跳过（日志和响应里会说明「日请求预算已用尽」），其它上游照常
-- 观测：@@pojiagw_budget_{requests,tokens}_{used,limit}@@、@@pojiagw_budget_exhausted@@，控制台「上游」页也显示
+- 观测：@@gateway_manager_budget_{requests,tokens}_{used,limit}@@、@@gateway_manager_budget_exhausted@@，控制台「上游」页也显示
 - 注意：预算只在内存里计数，重启归零（避免旧数据误伤）
 
 ## 19. 批量回归（新）
@@ -452,7 +487,7 @@ relay  响应体回写（流式场景 = 整个流的时长）
 - 非流式响应：解析 @@usage.total_tokens@@（OpenAI）或 @@usage.input_tokens + output_tokens@@（Anthropic），最多缓冲 2 MB，超限则退回流式不计量
 - 流式响应：保留最近 256 KB 尾部窗口，结束后解析最后一个 @@usage@@（大部分供应商在末块给）
 - 流程：请求前按 @@字节/4@@ 预扣 → 拿到真实 usage 后 **纠正**预算余额（@@ReconcileBudget@@）
-- 指标：@@pojiagw_tokens_total{upstream,name}@@ 累计真实 token；@@pojiagw_budget_tokens_used@@ 是纠正后的预算余额占用
+- 指标：@@gateway_manager_tokens_total{upstream,name}@@ 累计真实 token；@@gateway_manager_budget_tokens_used@@ 是纠正后的预算余额占用
 
 ## 22. 上游适配器（新）
 
@@ -517,8 +552,8 @@ relay  响应体回写（流式场景 = 整个流的时长）
 @@@
 
 - 主请求照常返回，后台按比例把**同一份请求体**（已注入）复制给影子上游，忽略响应内容
-- 影子投递不占用主链路延迟；影子自己的 token 用量照常计入预算与 @@pojiagw_tokens_total@@
-- 指标：@@pojiagw_mirror_total{upstream,name,result="ok|fail"}@@
+- 影子投递不占用主链路延迟；影子自己的 token 用量照常计入预算与 @@gateway_manager_tokens_total@@
+- 指标：@@gateway_manager_mirror_total{upstream,name,result="ok|fail"}@@
 - 典型用法：新上游/新策略上线前，先 10% 影子对照，看延迟与错误率
 
 ## 25. 快照 Git 化（新）
@@ -545,7 +580,7 @@ closed ──失败≥阈值──▶ open ──冷却到期──▶ half_open
 - @@half_open_limit@@ 控制半开时允许的并发探测数（默认 1）
 - 退避：第 n 次打开冷却 = @@min(base × 2^(n-1), cooldown_max_seconds)@@
 - 状态可见：@@/admin/api/status@@ 每个上游的 @@circuit@@ 字段；控制台「上游」表新增「熔断」列
-- 指标：@@pojiagw_upstream_circuit{upstream,name,state}@@
+- 指标：@@gateway_manager_upstream_circuit{upstream,name,state}@@
 
 ## 27. A/B 实验（新）
 
@@ -563,32 +598,32 @@ closed ──失败≥阈值──▶ open ──冷却到期──▶ half_open
 - 每臂可指定 @@profile_id@@（覆盖策略选择）和 @@upstream_id@@（把候选上游限定为该上游）
 - 自动统计：次数 / 错误数 / 累计延迟 / 累计 token
 - 控制台「状态」页「A/B 实验」表；接口 @@GET /admin/api/experiments@@
-- 指标：@@pojiagw_experiment_total{experiment,arm,result}@@、@@pojiagw_experiment_{latency_ms,tokens}_sum@@
+- 指标：@@gateway_manager_experiment_total{experiment,arm,result}@@、@@gateway_manager_experiment_{latency_ms,tokens}_sum@@
 
 ## 28. 一键安装（新）
 
 @@@bash
 # Linux（root）
-./install.sh                                   # 默认 build/pojiagw-linux-amd64 → /opt/pojiagw + systemd
+./install.sh                                   # 默认 build/gateway-manager-linux-amd64 → /opt/gateway-manager + systemd
 sudo PORT=7878 BIND=0.0.0.0 ACCESS_KEY=sk-local ./install.sh
 sudo ./install.sh --uninstall
 @@@
 
 @@@powershell
 # Windows（管理员 PowerShell）
-.\install.ps1                                  # 默认 build\pojiagw.exe → %LOCALAPPDATA%\pojiagw
+.\install.ps1                                  # 默认 build\gateway-manager.exe → %LOCALAPPDATA%\gateway-manager
 .\install.ps1 -Port 7878 -AccessKey sk-local -AdminToken admin -Service
 .\install.ps1 -Uninstall
 @@@
 
 - 两个脚本都会：复制二进制 → 生成/修正配置（端口、绑定、key、admin token）→ 可选注册服务 → 打印控制台与指标地址
-- install.sh 自动创建系统用户 @@pojiagw@@、写 systemd unit（含 @@ProtectSystem@@ 等加固）、@@systemctl enable --now@@
+- install.sh 自动创建系统用户 @@gateway-manager@@、写 systemd unit（含 @@ProtectSystem@@ 等加固）、@@systemctl enable --now@@
 - install.ps1 用原生 @@ConvertFrom-Json@@ 改配置，@@sc.exe@@ 注册服务并设置失败自动重启；文件带 UTF-8 BOM 以免 PowerShell 5.1 按 ANSI 解析中文
 
 ## 29. Docker 与一键可观测栈（新）
 
 ```bash
-docker compose up -d     # pojiagw + Prometheus + Grafana 一起起来
+docker compose up -d     # gateway-manager + Prometheus + Grafana 一起起来
 # 控制台     http://127.0.0.1:7878/ui
 # 指标       http://127.0.0.1:7878/metrics
 # Prometheus http://127.0.0.1:9090
@@ -596,10 +631,10 @@ docker compose up -d     # pojiagw + Prometheus + Grafana 一起起来
 ```
 
 - 镜像：`Dockerfile` 多阶段构建（`golang:1.21-alpine` → `alpine:3.20`），非 root 用户、只读根文件系统、`no-new-privileges`、内置 `HEALTHCHECK`
-- 首次启动自动 `init` 生成配置，并通过环境变量修正监听地址：`POJIAGW_BIND` / `POJIAGW_PORT` / `POJIAGW_ACCESS_KEY` / `POJIAGW_ADMIN_TOKEN`
+- 首次启动自动 `init` 生成配置，并通过环境变量修正监听地址：`GATEWAY_MANAGER_BIND` / `GATEWAY_MANAGER_PORT` / `GATEWAY_MANAGER_ACCESS_KEY` / `GATEWAY_MANAGER_ADMIN_TOKEN`
 - 数据卷 `./data`：配置、状态、快照都在里面
-- `docker/prometheus.yml` 抓 `pojiagw:7878`；`deploy/prometheus-alerts.yml` 直接挂进 Prometheus；`deploy/grafana-dashboard.json` 由 provisioning 自动导入
-- 单独构建：`docker build -t pojiagw . && docker run -d -p 7878:7878 -v "$PWD/data:/data" pojiagw`
+- `docker/prometheus.yml` 抓 `gateway-manager:7878`；`deploy/prometheus-alerts.yml` 直接挂进 Prometheus；`deploy/grafana-dashboard.json` 由 provisioning 自动导入
+- 单独构建：`docker build -t gateway-manager . && docker run -d -p 7878:7878 -v "$PWD/data:/data" gateway-manager`
 
 ## 30. 配置快照与回滚（新）
 
@@ -653,15 +688,15 @@ docker compose up -d     # pojiagw + Prometheus + Grafana 一起起来
 
 ```bash
 # Linux（systemd）
-sudo install -d -o pojiagw -g pojiagw /opt/pojiagw
-sudo cp build/pojiagw-linux-amd64 /opt/pojiagw/ && sudo cp config.json /opt/pojiagw/
-sudo cp deploy/pojiagw.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now pojiagw
+sudo install -d -o gateway-manager -g gateway-manager /opt/gateway-manager
+sudo cp build/gateway-manager-linux-amd64 /opt/gateway-manager/ && sudo cp config.json /opt/gateway-manager/
+sudo cp deploy/gateway-manager.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now gateway-manager
 ```
 
 ```powershell
 # Windows（服务常驻，管理员）
-.\deploy\install-windows-service.ps1 -ExePath D:\pojiagw\pojiagw.exe -ConfigPath D:\pojiagw\config.json
+.\deploy\install-windows-service.ps1 -ExePath D:\gateway-manager\gateway-manager.exe -ConfigPath D:\gateway-manager\config.json
 ```
 
 需要跨机访问时先设 `access_keys` + `admin_token`，再把 `bind` 改成 `0.0.0.0`，并建议放在 Nginx / Caddy 后面加 TLS。
@@ -677,10 +712,10 @@ go test ./... -v    # 47/47 PASS
 
 | 产物 | 平台 | 大小 | 格式 |
 | --- | --- | --- | --- |
-| build/pojiagw.exe | windows/amd64 | 7.41 MB | PE |
-| build/pojiagw-windows-arm64.exe | windows/arm64 | 6.73 MB | PE |
-| build/pojiagw-linux-amd64 | linux/amd64 | 7.20 MB | ELF |
-| build/pojiagw-linux-arm64 | linux/arm64 | 6.63 MB | ELF |
+| build/gateway-manager-windows-amd64.exe | windows/amd64 | 7.46 MB | PE |
+| build/gateway-manager-windows-arm64.exe | windows/arm64 | 6.77 MB | PE |
+| build/gateway-manager-linux-amd64 | linux/amd64 | 7.25 MB | ELF |
+| build/gateway-manager-linux-arm64 | linux/arm64 | 6.75 MB | ELF |
 
 21 个用例：注入 ×3 形态、failover、鉴权、SSE 合流、SSE 透传、模型聚合、别名与策略选择、路径规范化、key 池打分与冷却、401 换 key 重试、规则拦截、规则注入优先于策略、规则改写参数与请求头、规则条件匹配、模板库增删查、规则 dry-run 接口、模板应用到策略、**key 池导出恢复**、**状态文件往返（无明文 key）**、**规则命中统计接口与清零**、**Prometheus 指标端点（含量值断言）**、**快照创建/自动留档/回滚/路径穿越拒绝**、**直方图桶与 +Inf 计数**、**回放记录与脱敏/复现**、**Grafana 看板 JSON 结构校验**、**权重灰度分流比例（1:9→2:18）**、**耗时三段直方图**、**告警规则文件结构**、**自定义探测路径与 expect_contains**、**采样留档与复现**、**规则书往返与行号报错**、**日预算用尽与指标**、**联邦并行汇总（含离线 peer）**、**批量回归统计**、**usage 纠正预算 + token 指标（含 SSE）**、**peer 当上游转发**、**适配器路径/认证/额外头**、**表达式语法与拦截**、**镜像投递与指标**、**快照 git 提交**、**熔断半开与指数退避**、**实验分臂与统计**、**安装脚本结构（含 BOM 断言）**。
 
@@ -689,7 +724,7 @@ go test ./... -v    # 47/47 PASS
 ```
 chat#1   key 顺序 sk-bad → sk-good，最终 200（401 后自动换 key）
 chat#2   mini 命中 inject 规则 → 上游 messages[0] = {"role":"system","content":"答案 3 句以内"}
-chat#3   cheap 命中 override 规则 → model=fake-large, temperature=0.2, 附带 X-Gateway=pojiagw
+chat#3   cheap 命中 override 规则 → model=fake-large, temperature=0.2, 附带 X-Gateway=gateway-manager
 key 池   sk…od 98(ok) / sk…lt 80(ok) / sk…ad 20(bad)   ← 坏 key 被降权
 dry-run  matched=[r-tag,r-mini] skipped=[r-param] denied=false
 模板     总数 13（内置 12 + 自定义 1），应用后策略数 2（p1 + from-tpl）

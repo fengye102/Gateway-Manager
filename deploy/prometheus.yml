@@ -1,9 +1,9 @@
-# 抓取 pojiagw 指标的示例配置
+# 抓取 gateway-manager 指标的示例配置
 global:
   scrape_interval: 15s
 
 scrape_configs:
-  - job_name: pojiagw
+  - job_name: gateway-manager
     metrics_path: /metrics
     static_configs:
       - targets: ["127.0.0.1:7878"]

@@ -10,7 +10,7 @@ import (
 // 规则书 DSL：每行一条规则，when 是条件，action 是动作，与拖拽 UI 双向同步。
 func rulesToDSL(rules []Rule) string {
 	var b strings.Builder
-	b.WriteString("# pojiagw 规则书（与拖拽 UI 双向同步）\n")
+	b.WriteString("# gateway-manager 规则书（与拖拽 UI 双向同步）\n")
 	b.WriteString("# 顶层字段：id / name / type / disabled\n")
 	b.WriteString("# when：models / paths / header: Key=Value / body_contains\n")
 	b.WriteString("# action：instruction / profile_id / model / params / header_name / header_value / status / message\n\n")

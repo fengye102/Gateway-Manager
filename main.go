@@ -8,25 +8,28 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 )
 
-var version = "2.0.1"
+var version = "2.1.0"
 
 const usageText = `
-网关管家 pojiagw —— 本机网关聚合 + 策略注入（Windows / Linux 通用）
+网关管家 gateway-manager —— 本机网关聚合 + 策略注入（Windows / Linux 通用）
 
 用法：
-  pojiagw serve     [-config config.json] [-listen 127.0.0.1:7878]
-  pojiagw discover  [-range 3000-9999] [-priority] [-workers 96] [-json]
-  pojiagw check     [-config config.json]
-  pojiagw init      [-config config.json] [-force]
-  pojiagw dump      [-config config.json]
-  pojiagw version
+  gateway-manager serve     [-config config.json] [-listen 127.0.0.1:7878]
+  gateway-manager discover  [-range 3000-9999] [-priority] [-workers 96] [-json]
+  gateway-manager check     [-config config.json]
+  gateway-manager init      [-config config.json] [-force]
+  gateway-manager dump      [-config config.json]
+  gateway-manager version
 
 子命令说明：
   serve     启动本地网关（OpenAI / Anthropic 兼容，带策略注入）
@@ -49,7 +52,7 @@ func main() {
 	}
 	switch cmd {
 	case "serve", "run", "start":
-		runServe(args)
+		runServe(args, len(os.Args) == 1)
 	case "discover", "scan":
 		runDiscover(args)
 	case "check":
@@ -59,7 +62,7 @@ func main() {
 	case "dump":
 		runDump(args)
 	case "version", "-v", "--version":
-		fmt.Println("pojiagw " + version)
+		fmt.Println("gateway-manager " + version)
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -69,20 +72,37 @@ func main() {
 	}
 }
 
-func runServe(args []string) {
+func runServe(args []string, bare bool) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	cfgPath := fs.String("config", "config.json", "配置文件路径")
 	listen := fs.String("listen", "", "覆盖监听地址，例如 127.0.0.1:7878")
 	statePath := fs.String("state", "", "运行状态文件路径（key 健康分 / 规则命中），默认与配置同目录")
+	openUI := fs.Bool("open", false, "启动后自动用浏览器打开控制台")
+	noBrowser := fs.Bool("no-browser", false, "不自动打开浏览器（双击启动时默认会打开）")
 	_ = fs.Parse(args)
 
 	cfg, err := LoadConfig(*cfgPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "加载配置失败：%v\n先生成示例配置：pojiagw init -config %s\n", err, *cfgPath)
-		os.Exit(1)
+		if os.IsNotExist(err) {
+			fmt.Printf("未找到配置 %s，正在生成默认配置...\n", *cfgPath)
+			if saveErr := SaveConfig(*cfgPath, SampleConfig()); saveErr != nil {
+				fmt.Fprintf(os.Stderr, "生成默认配置失败：%v\n", saveErr)
+				pauseIfInteractive()
+				os.Exit(1)
+			}
+			cfg, err = LoadConfig(*cfgPath)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "加载配置失败：%v\n", err)
+			fmt.Fprintf(os.Stderr, "提示：先运行 %s init -config %s 生成示例配置，再编辑上游地址。\n", filepath.Base(os.Args[0]), *cfgPath)
+			pauseIfInteractive()
+			os.Exit(1)
+		}
 	}
 	if err := ValidateConfig(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "配置校验失败：%v\n", err)
+		fmt.Fprintf(os.Stderr, "请检查 %s 里的 upstreams / profiles / rules 字段。\n", *cfgPath)
+		pauseIfInteractive()
 		os.Exit(1)
 	}
 
@@ -91,11 +111,13 @@ func runServe(args []string) {
 		host, portStr, splitErr := net.SplitHostPort(*listen)
 		if splitErr != nil {
 			fmt.Fprintf(os.Stderr, "-listen 需要 host:port 形式：%v\n", splitErr)
+			pauseIfInteractive()
 			os.Exit(1)
 		}
 		n, convErr := strconv.Atoi(portStr)
 		if convErr != nil {
 			fmt.Fprintf(os.Stderr, "-listen 端口无效：%v\n", convErr)
+			pauseIfInteractive()
 			os.Exit(1)
 		}
 		bind, port = host, n
@@ -140,26 +162,85 @@ func runServe(args []string) {
 	}()
 
 	base := "http://" + net.JoinHostPort(bind, strconv.Itoa(port))
+	if bind == "0.0.0.0" || bind == "::" {
+		base = "http://127.0.0.1:" + strconv.Itoa(port)
+	}
 	fmt.Println("========================================")
-	fmt.Println(" 网关管家 pojiagw " + version)
+	fmt.Println(" 网关管家 gateway-manager " + version)
 	fmt.Println(" 监听      : " + addr)
 	fmt.Println(" OpenAI    : " + base + "/v1/chat/completions")
 	fmt.Println(" Responses : " + base + "/v1/responses")
 	fmt.Println(" Messages  : " + base + "/v1/messages")
 	fmt.Println(" 模型列表  : " + base + "/v1/models")
 	fmt.Println(" 控制台    : " + base + "/ui")
+	fmt.Println(" 指标      : " + base + "/metrics")
 	fmt.Println(" 上游数    : " + strconv.Itoa(len(cfg.Upstreams)) + "  策略数: " + strconv.Itoa(len(cfg.Profiles)) + "  规则数: " + strconv.Itoa(len(cfg.Rules)))
 	if cfg.Server.PersistState {
 		fmt.Println(" 状态文件  : " + defaultStatePath(*cfgPath))
 	}
+	fmt.Println(" 配置文件  : " + *cfgPath)
 	fmt.Println("========================================")
+	fmt.Println(" 按 Ctrl+C 停止服务")
 	store.Info("网关启动：%s，上游 %d 个，策略 %d 个", addr, len(cfg.Upstreams), len(cfg.Profiles))
+
+	if (*openUI || (bare && !*noBrowser)) && !interactiveIsService() {
+		go func() {
+			time.Sleep(400 * time.Millisecond)
+			openBrowser(base + "/ui")
+		}()
+	}
 
 	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		fmt.Fprintf(os.Stderr, "监听失败：%v\n", err)
+		fmt.Fprintf(os.Stderr, "提示：端口 %d 可能已被占用，可改用 -listen 127.0.0.1:8787\n", port)
+		pauseIfInteractive()
 		os.Exit(1)
 	}
 	store.Info("网关已停止")
+}
+
+// interactiveIsService：以 Windows 服务方式运行时不要弹浏览器
+func interactiveIsService() bool {
+	if os.Getenv("GATEWAY_MANAGER_NO_BROWSER") == "1" {
+		return true
+	}
+	return !interactiveConsole()
+}
+
+// interactiveConsole 判断当前是否挂在交互式控制台（双击启动时为 true）
+func interactiveConsole() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
+}
+
+// pauseIfInteractive 在交互控制台里让窗口停留，避免双击后一闪而过
+func pauseIfInteractive() {
+	if !interactiveConsole() {
+		return
+	}
+	if os.Getenv("GATEWAY_MANAGER_NO_PAUSE") == "1" {
+		return
+	}
+	fmt.Fprint(os.Stderr, "\n按回车键退出...")
+	var line string
+	_, _ = fmt.Fscanln(os.Stdin, &line)
+}
+
+// openBrowser 尽力打开系统默认浏览器（失败静默）
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	case "darwin":
+		cmd = exec.Command("open", url)
+	default:
+		cmd = exec.Command("xdg-open", url)
+	}
+	_ = cmd.Start()
 }
 
 func runDiscover(args []string) {

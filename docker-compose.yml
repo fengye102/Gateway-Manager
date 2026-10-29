@@ -1,24 +1,24 @@
-# 一键起 pojiagw + Prometheus + Grafana
+# 一键起 gateway-manager + Prometheus + Grafana
 #   docker compose up -d
 #   控制台   http://127.0.0.1:7878/ui
 #   指标     http://127.0.0.1:7878/metrics
 #   Grafana  http://127.0.0.1:3000 （admin / admin，首次请改密码）
 #   Prometheus http://127.0.0.1:9090
 services:
-  pojiagw:
+  gateway-manager:
     build: .
-    image: pojiagw:2.0.1
-    container_name: pojiagw
+    image: gateway-manager:2.1.0
+    container_name: gateway-manager
     ports:
       - "7878:7878"
     volumes:
       - ./data:/data
     environment:
-      POJIAGW_BIND: "0.0.0.0"
-      POJIAGW_PORT: "7878"
+      GATEWAY_MANAGER_BIND: "0.0.0.0"
+      GATEWAY_MANAGER_PORT: "7878"
       # 需要给代理接口加鉴权时取消注释
-      # POJIAGW_ACCESS_KEY: "sk-local"
-      # POJIAGW_ADMIN_TOKEN: "admin-local"
+      # GATEWAY_MANAGER_ACCESS_KEY: "sk-local"
+      # GATEWAY_MANAGER_ADMIN_TOKEN: "admin-local"
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -28,14 +28,14 @@ services:
 
   prometheus:
     image: prom/prometheus:v2.54.1
-    container_name: pojiagw-prometheus
+    container_name: gateway-manager-prometheus
     depends_on:
-      - pojiagw
+      - gateway-manager
     ports:
       - "9090:9090"
     volumes:
       - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./deploy/prometheus-alerts.yml:/etc/prometheus/rules/pojiagw.yml:ro
+      - ./deploy/prometheus-alerts.yml:/etc/prometheus/rules/gateway-manager.yml:ro
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
@@ -43,7 +43,7 @@ services:
 
   grafana:
     image: grafana/grafana:11.2.0
-    container_name: pojiagw-grafana
+    container_name: gateway-manager-grafana
     depends_on:
       - prometheus
     ports:
@@ -53,7 +53,7 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
-      - ./deploy/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/pojiagw.json:ro
-      - ./docker/grafana-provisioning.yml:/etc/grafana/provisioning/dashboards/pojiagw.yaml:ro
+      - ./deploy/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/gateway-manager.json:ro
+      - ./docker/grafana-provisioning.yml:/etc/grafana/provisioning/dashboards/gateway-manager.yaml:ro
       - ./docker/grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yaml:ro
     restart: unless-stopped

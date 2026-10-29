@@ -55,7 +55,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(pojiagw_requests_total[1m]))",
+          "expr": "sum(rate(gateway_manager_requests_total[1m]))",
           "legendFormat": "QPS",
           "instant": false,
           "format": "time_series"
@@ -94,14 +94,14 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(pojiagw_upstream_healthy)",
+          "expr": "sum(gateway_manager_upstream_healthy)",
           "legendFormat": "健康",
           "instant": false,
           "format": "time_series"
         },
         {
           "refId": "B",
-          "expr": "count(pojiagw_upstream_healthy)",
+          "expr": "count(gateway_manager_upstream_healthy)",
           "legendFormat": "总数",
           "instant": false,
           "format": "time_series"
@@ -136,21 +136,21 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(pojiagw_rule_injections_total)",
+          "expr": "sum(gateway_manager_rule_injections_total)",
           "legendFormat": "规则注入",
           "instant": false,
           "format": "time_series"
         },
         {
           "refId": "B",
-          "expr": "sum(pojiagw_profile_injections_total)",
+          "expr": "sum(gateway_manager_profile_injections_total)",
           "legendFormat": "策略注入",
           "instant": false,
           "format": "time_series"
         },
         {
           "refId": "C",
-          "expr": "sum(pojiagw_no_profile_total)",
+          "expr": "sum(gateway_manager_no_profile_total)",
           "legendFormat": "未注入",
           "instant": false,
           "format": "time_series"
@@ -185,14 +185,14 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(pojiagw_rule_denies_total)",
+          "expr": "sum(gateway_manager_rule_denies_total)",
           "legendFormat": "规则拦截",
           "instant": false,
           "format": "time_series"
         },
         {
           "refId": "B",
-          "expr": "sum(pojiagw_upstream_errors_total)",
+          "expr": "sum(gateway_manager_upstream_errors_total)",
           "legendFormat": "上游错误",
           "instant": false,
           "format": "time_series"
@@ -227,28 +227,28 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "pojiagw_config_upstreams",
+          "expr": "gateway_manager_config_upstreams",
           "legendFormat": "上游",
           "instant": false,
           "format": "time_series"
         },
         {
           "refId": "B",
-          "expr": "pojiagw_config_rules",
+          "expr": "gateway_manager_config_rules",
           "legendFormat": "规则",
           "instant": false,
           "format": "time_series"
         },
         {
           "refId": "C",
-          "expr": "pojiagw_snapshots",
+          "expr": "gateway_manager_snapshots",
           "legendFormat": "快照",
           "instant": false,
           "format": "time_series"
         },
         {
           "refId": "D",
-          "expr": "pojiagw_replay_entries",
+          "expr": "gateway_manager_replay_entries",
           "legendFormat": "回放",
           "instant": false,
           "format": "time_series"
@@ -283,7 +283,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "pojiagw_uptime_seconds",
+          "expr": "gateway_manager_uptime_seconds",
           "legendFormat": "uptime",
           "instant": false,
           "format": "time_series"
@@ -321,14 +321,14 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, upstream) (rate(pojiagw_upstream_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, upstream) (rate(gateway_manager_upstream_duration_seconds_bucket[5m])))",
           "legendFormat": "p95 {{upstream}}",
           "instant": false,
           "format": "time_series"
         },
         {
           "refId": "B",
-          "expr": "histogram_quantile(0.50, sum by (le, upstream) (rate(pojiagw_upstream_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le, upstream) (rate(gateway_manager_upstream_duration_seconds_bucket[5m])))",
           "legendFormat": "p50 {{upstream}}",
           "instant": false,
           "format": "time_series"
@@ -358,7 +358,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (endpoint) (rate(pojiagw_requests_by_endpoint_total[1m]))",
+          "expr": "sum by (endpoint) (rate(gateway_manager_requests_by_endpoint_total[1m]))",
           "legendFormat": "{{endpoint}}",
           "instant": false,
           "format": "time_series"
@@ -388,28 +388,28 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(pojiagw_rule_injections_total[1m]))",
+          "expr": "sum(rate(gateway_manager_rule_injections_total[1m]))",
           "legendFormat": "规则注入",
           "instant": false,
           "format": "time_series"
         },
         {
           "refId": "B",
-          "expr": "sum(rate(pojiagw_profile_injections_total[1m]))",
+          "expr": "sum(rate(gateway_manager_profile_injections_total[1m]))",
           "legendFormat": "策略注入",
           "instant": false,
           "format": "time_series"
         },
         {
           "refId": "C",
-          "expr": "sum(rate(pojiagw_rule_denies_total[1m]))",
+          "expr": "sum(rate(gateway_manager_rule_denies_total[1m]))",
           "legendFormat": "规则拦截",
           "instant": false,
           "format": "time_series"
         },
         {
           "refId": "D",
-          "expr": "sum(rate(pojiagw_upstream_errors_total[1m]))",
+          "expr": "sum(rate(gateway_manager_upstream_errors_total[1m]))",
           "legendFormat": "上游错误",
           "instant": false,
           "format": "time_series"
@@ -439,7 +439,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (upstream, code) (rate(pojiagw_upstream_responses_total[$__rate_interval]))",
+          "expr": "sum by (upstream, code) (rate(gateway_manager_upstream_responses_total[$__rate_interval]))",
           "legendFormat": "{{upstream}} {{code}}",
           "instant": false,
           "format": "time_series"
@@ -469,7 +469,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "pojiagw_key_score",
+          "expr": "gateway_manager_key_score",
           "legendFormat": "{{upstream}} {{key}}",
           "instant": true,
           "format": "table"
@@ -517,7 +517,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "pojiagw_rule_hit_ratio",
+          "expr": "gateway_manager_rule_hit_ratio",
           "legendFormat": "{{rule}}",
           "instant": true,
           "format": "time_series"
@@ -545,7 +545,7 @@
   "refresh": "10s",
   "schemaVersion": 39,
   "tags": [
-    "pojiagw",
+    "gateway-manager",
     "llm-gateway",
     "openai-proxy"
   ],
@@ -586,8 +586,8 @@
     ]
   },
   "timezone": "browser",
-  "title": "网关管家 pojiagw",
-  "uid": "pojiagw-main",
+  "title": "网关管家 gateway-manager",
+  "uid": "gateway-manager-main",
   "version": 1,
   "weekStart": ""
 }

@@ -1,4 +1,4 @@
-# Gateway Manager (pojiagw) v2.0.1
+# Gateway Manager (gateway-manager) v2.1.0
 
 [中文](README.md) | **English**
 
@@ -20,7 +20,7 @@ for Windows / Linux / macOS / Docker.
 ## Why
 
 Wiring several local model gateways together is easy; running them **safely** is not.
-pojiagw gives you a single stable endpoint (`http://127.0.0.1:7878/v1`) plus the control
+gateway-manager gives you a single stable endpoint (`http://127.0.0.1:7878/v1`) plus the control
 plane around it:
 
 - one endpoint, many upstreams (priority, weights, canary, mirror)
@@ -32,40 +32,55 @@ plane around it:
 
 ## Quick start
 
+### Windows
+
+1. Download `gateway-manager-<version>-windows-amd64.zip` from [Releases](https://github.com/fengye102/Gateway-Manager/releases/latest)
+2. **Right-click the zip → Properties → Unblock** (downloaded binaries trip SmartScreen)
+3. Extract, then double-click `gateway-manager-windows-amd64.exe` (or `start-windows.bat`)
+   - first run auto-creates `config.json` next to the exe and starts listening on `127.0.0.1:7878`
+   - the console opens `/ui` automatically; errors keep the window open ("press Enter to exit")
+
+| Symptom | Fix |
+| --- | --- |
+| window flashes and closes | fixed in v2.1.0 (auto-init + stays open); older builds: use `start-windows.bat` |
+| "Windows protected your PC" | Unblock the file, or More info → Run anyway |
+| port 7878 busy | `serve -config config.json -listen 127.0.0.1:8787` |
+| antivirus warning | unsigned Go binary false positive; add exclusion or build locally |
+
 ### Docker (recommended)
 
 ```bash
 git clone https://github.com/fengye102/Gateway-Manager.git && cd Gateway-Manager
-docker compose up -d          # pojiagw + Prometheus + Grafana
+docker compose up -d          # gateway-manager + Prometheus + Grafana
 # UI        http://127.0.0.1:7878/ui
 # metrics   http://127.0.0.1:7878/metrics
 # Grafana   http://127.0.0.1:3000   (admin/admin)
 ```
 
 ```bash
-docker build -t pojiagw .
-docker run -d --name pojiagw -p 7878:7878 -v "$PWD/data:/data" pojiagw
+docker build -t gateway-manager .
+docker run -d --name gateway-manager -p 7878:7878 -v "$PWD/data:/data" gateway-manager
 ```
 
 ### Binary
 
 ```bash
 # Linux / macOS
-curl -LO https://github.com/fengye102/Gateway-Manager/releases/latest/download/pojiagw-linux-amd64
-chmod +x pojiagw-linux-amd64 && ./pojiagw-linux-amd64 init -config config.json
-./pojiagw-linux-amd64 serve -config config.json
+curl -LO https://github.com/fengye102/Gateway-Manager/releases/latest/download/gateway-manager-2.1.0-linux-amd64.tar.gz
+chmod +x gateway-manager-linux-amd64 && ./gateway-manager-linux-amd64 init -config config.json
+./gateway-manager-linux-amd64 serve -config config.json
 ```
 
 ```powershell
 # Windows
-.\pojiagw.exe init -config config.json
-.\pojiagw.exe serve -config config.json
+.\gateway-manager.exe init -config config.json
+.\gateway-manager.exe serve -config config.json
 ```
 
 ### One-liner installers
 
 ```bash
-sudo ./install.sh                                   # /opt/pojiagw + systemd
+sudo ./install.sh                                   # /opt/gateway-manager + systemd
 sudo PORT=7878 BIND=0.0.0.0 ACCESS_KEY=sk-local ./install.sh
 sudo ./install.sh --uninstall
 ```
@@ -135,7 +150,7 @@ Full reference: [README.md](README.md) (Chinese, 35 sections) and `config.exampl
 | `rules` | ordered rule chain (see below) |
 | `adapters` | per-vendor path / auth header / extra headers |
 | `experiments` | weighted arms, each with own profile and upstream |
-| `federation.peers` | other pojiagw instances (read-only status, or `as_upstream: true`) |
+| `federation.peers` | other gateway-manager instances (read-only status, or `as_upstream: true`) |
 
 ## Rules engine
 

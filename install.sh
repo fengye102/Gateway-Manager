@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# pojiagw 一体化安装（Linux）：二进制 + 配置 + systemd 服务
+# gateway-manager 一体化安装（Linux）：二进制 + 配置 + systemd 服务
 # 用法：
-#   sudo ./install.sh [二进制路径]                      # 默认 build/pojiagw-linux-amd64
-#   sudo PREFIX=/opt/pojiagw PORT=7878 BIND=0.0.0.0 ACCESS_KEY=sk-local ./install.sh
+#   sudo ./install.sh [二进制路径]                      # 默认 build/gateway-manager-linux-amd64
+#   sudo PREFIX=/opt/gateway-manager PORT=7878 BIND=0.0.0.0 ACCESS_KEY=sk-local ./install.sh
 #   sudo ./install.sh --uninstall
 set -euo pipefail
 
-PREFIX="${PREFIX:-/opt/pojiagw}"
+PREFIX="${PREFIX:-/opt/gateway-manager}"
 PORT="${PORT:-7878}"
 BIND="${BIND:-127.0.0.1}"
 ACCESS_KEY="${ACCESS_KEY:-}"
 ADMIN_TOKEN="${ADMIN_TOKEN:-}"
-SERVICE_NAME="${SERVICE_NAME:-pojiagw}"
-SERVICE_USER="${SERVICE_USER:-pojiagw}"
+SERVICE_NAME="${SERVICE_NAME:-gateway-manager}"
+SERVICE_USER="${SERVICE_USER:-gateway-manager}"
 UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
 
-log() { printf '\033[36m[pojiagw]\033[0m %s\n' "$*"; }
-die() { printf '\033[31m[pojiagw]\033[0m %s\n' "$*" >&2; exit 1; }
+log() { printf '\033[36m[gateway-manager]\033[0m %s\n' "$*"; }
+die() { printf '\033[31m[gateway-manager]\033[0m %s\n' "$*" >&2; exit 1; }
 
 if [[ "${1:-}" == "--uninstall" ]]; then
   log "停止并移除服务 $SERVICE_NAME"
@@ -27,17 +27,17 @@ if [[ "${1:-}" == "--uninstall" ]]; then
   exit 0
 fi
 
-BIN_SRC="${1:-build/pojiagw-linux-amd64}"
+BIN_SRC="${1:-build/gateway-manager-linux-amd64}"
 [[ -f "$BIN_SRC" ]] || die "找不到二进制：$BIN_SRC"
 [[ "$(id -u)" -eq 0 ]] || die "请用 root / sudo 运行"
 
 log "安装到 $PREFIX"
 install -d -m 0755 "$PREFIX"
-install -m 0755 "$BIN_SRC" "$PREFIX/pojiagw"
+install -m 0755 "$BIN_SRC" "$PREFIX/gateway-manager"
 
 if [[ ! -f "$PREFIX/config.json" ]]; then
   log "生成默认配置"
-  "$PREFIX/pojiagw" init -config "$PREFIX/config.json" >/dev/null
+  "$PREFIX/gateway-manager" init -config "$PREFIX/config.json" >/dev/null
 fi
 sed -i "s/\"port\": [0-9]*/\"port\": $PORT/" "$PREFIX/config.json"
 sed -i "s/\"bind\": \"[^\"]*\"/\"bind\": \"$BIND\"/" "$PREFIX/config.json"
@@ -59,7 +59,7 @@ chmod 640 "$PREFIX/config.json"
 log "写入 systemd unit"
 cat > "$UNIT_PATH" <<UNIT
 [Unit]
-Description=pojiagw gateway manager
+Description=gateway-manager gateway manager
 After=network-online.target
 Wants=network-online.target
 
@@ -68,7 +68,7 @@ Type=simple
 User=$SERVICE_USER
 Group=$SERVICE_USER
 WorkingDirectory=$PREFIX
-ExecStart=$PREFIX/pojiagw serve -config $PREFIX/config.json -state $PREFIX/state.json
+ExecStart=$PREFIX/gateway-manager serve -config $PREFIX/config.json -state $PREFIX/state.json
 Restart=always
 RestartSec=3
 NoNewPrivileges=true

@@ -88,7 +88,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch path {
 	case "/":
 		writeJSON(w, http.StatusOK, map[string]any{
-			"service": "pojiagw",
+			"service": "gateway-manager",
 			"version": version,
 			"endpoints": []string{
 				"/v1/models", "/v1/chat/completions", "/v1/responses",
@@ -531,7 +531,7 @@ func (s *Server) forward(ctx context.Context, up *Upstream, kind endpointKind, u
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
-	req.Header.Set("User-Agent", "pojiagw/"+version)
+	req.Header.Set("User-Agent", "gateway-manager/"+version)
 	if key != "" {
 		if adapter != nil {
 			req.Header.Set(adapter.AuthHeader, adapter.AuthPrefix+key)

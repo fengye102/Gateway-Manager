@@ -700,7 +700,7 @@ func TestKeyPoolExportRestore(t *testing.T) {
 
 func TestStatePersistenceRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	statePath := filepath.Join(dir, "pojiagw.state.json")
+	statePath := filepath.Join(dir, "gateway-manager.state.json")
 
 	cfg := DefaultConfig()
 	cfg.Upstreams = []Upstream{{
@@ -841,14 +841,14 @@ func TestMetricsEndpoint(t *testing.T) {
 	text := string(raw)
 	maskedKey := maskKey("sk-test-1234")
 	expects := []string{
-		"pojiagw_info{",
-		"pojiagw_key_score{upstream=\"u\",key=\"" + maskedKey + "\"}",
-		"pojiagw_requests_total 2",
-		"pojiagw_upstream_healthy{upstream=\"u\",name=\"U\"} 1",
-		"pojiagw_upstream_successes_total{upstream=\"u\",name=\"U\"} 2",
-		"pojiagw_rule_matched_total{rule=\"r1\",name=\"R1\"} 2",
-		"pojiagw_config_rules 1",
-		"pojiagw_snapshots ",
+		"gateway_manager_info{",
+		"gateway_manager_key_score{upstream=\"u\",key=\"" + maskedKey + "\"}",
+		"gateway_manager_requests_total 2",
+		"gateway_manager_upstream_healthy{upstream=\"u\",name=\"U\"} 1",
+		"gateway_manager_upstream_successes_total{upstream=\"u\",name=\"U\"} 2",
+		"gateway_manager_rule_matched_total{rule=\"r1\",name=\"R1\"} 2",
+		"gateway_manager_config_rules 1",
+		"gateway_manager_snapshots ",
 	}
 	for _, want := range expects {
 		if !strings.Contains(text, want) {
@@ -989,21 +989,21 @@ func TestHistogramAndEndpointMetrics(t *testing.T) {
 	text := string(raw)
 
 	expects := []string{
-		"# TYPE pojiagw_request_duration_seconds histogram",
-		"pojiagw_request_duration_seconds_bucket{le=\"0.05\"}",
-		"pojiagw_request_duration_seconds_sum ",
-		"pojiagw_request_duration_seconds_count 1",
-		"pojiagw_upstream_duration_seconds_bucket{upstream=\"u\",name=\"U\",le=\"0.05\"}",
-		"pojiagw_upstream_responses_total{upstream=\"u\",name=\"U\",code=\"200\"} 1",
-		"pojiagw_requests_by_endpoint_total{endpoint=\"chat.completions\"} 1",
-		"pojiagw_replay_entries 0",
+		"# TYPE gateway_manager_request_duration_seconds histogram",
+		"gateway_manager_request_duration_seconds_bucket{le=\"0.05\"}",
+		"gateway_manager_request_duration_seconds_sum ",
+		"gateway_manager_request_duration_seconds_count 1",
+		"gateway_manager_upstream_duration_seconds_bucket{upstream=\"u\",name=\"U\",le=\"0.05\"}",
+		"gateway_manager_upstream_responses_total{upstream=\"u\",name=\"U\",code=\"200\"} 1",
+		"gateway_manager_requests_by_endpoint_total{endpoint=\"chat.completions\"} 1",
+		"gateway_manager_replay_entries 0",
 	}
 	for _, want := range expects {
 		if !strings.Contains(text, want) {
 			t.Fatalf("指标缺少 %q\n%s", want, text[:min(len(text), 1500)])
 		}
 	}
-	if !strings.Contains(text, "pojiagw_request_duration_seconds_bucket{le=\"+Inf\"} 1") {
+	if !strings.Contains(text, "gateway_manager_request_duration_seconds_bucket{le=\"+Inf\"} 1") {
 		t.Fatalf("+Inf 桶缺失或被计错")
 	}
 }
@@ -1116,7 +1116,7 @@ func TestGrafanaDashboardFileValid(t *testing.T) {
 	if err := json.Unmarshal(raw, &dash); err != nil {
 		t.Fatalf("看板 JSON 解析失败: %v", err)
 	}
-	if dash.UID != "pojiagw-main" || dash.Title == "" {
+	if dash.UID != "gateway-manager-main" || dash.Title == "" {
 		t.Fatalf("看板元信息错误: uid=%q title=%q", dash.UID, dash.Title)
 	}
 	if len(dash.Panels) < 8 {
@@ -1126,8 +1126,8 @@ func TestGrafanaDashboardFileValid(t *testing.T) {
 		if p.ID == 0 || p.Title == "" || p.Type == "" {
 			t.Fatalf("面板字段不完整: %+v", p)
 		}
-		if len(p.Targets) == 0 || !strings.Contains(p.Targets[0].Expr, "pojiagw_") {
-			t.Fatalf("面板 %s 缺少 pojiagw_ 查询: %+v", p.Title, p.Targets)
+		if len(p.Targets) == 0 || !strings.Contains(p.Targets[0].Expr, "gateway_manager_") {
+			t.Fatalf("面板 %s 缺少 gateway_manager_ 查询: %+v", p.Title, p.Targets)
 		}
 	}
 	if len(dash.Templating.List) != 1 || dash.Templating.List[0].Name != "DS" {
@@ -1183,8 +1183,8 @@ func TestWeightedSplitAndRoutingMetrics(t *testing.T) {
 		}
 		return -1
 	}
-	canary := get(`pojiagw_routed_total{model="m",upstream="canary"`)
-	stable := get(`pojiagw_routed_total{model="m",upstream="stable"`)
+	canary := get(`gateway_manager_routed_total{model="m",upstream="canary"`)
+	stable := get(`gateway_manager_routed_total{model="m",upstream="stable"`)
 	if canary < 0 || stable < 0 {
 		t.Fatalf("分流指标缺失: canary=%v stable=%v", canary, stable)
 	}
@@ -1195,7 +1195,7 @@ func TestWeightedSplitAndRoutingMetrics(t *testing.T) {
 	if ratio < 0.04 || ratio > 0.18 {
 		t.Fatalf("灰度比例偏离 10%%: canary=%v/%v = %.2f", canary, total, ratio)
 	}
-	if !strings.Contains(text, `pojiagw_upstream_weight{upstream="canary",name="灰度"} 1`) {
+	if !strings.Contains(text, `gateway_manager_upstream_weight{upstream="canary",name="灰度"} 1`) {
 		t.Fatalf("权重指标缺失")
 	}
 }
@@ -1222,12 +1222,12 @@ func TestTimingBreakdownMetrics(t *testing.T) {
 	res.Body.Close()
 	text := string(raw)
 	for _, want := range []string{
-		"# TYPE pojiagw_queue_duration_seconds histogram",
-		"pojiagw_queue_duration_seconds_count 1",
-		"pojiagw_upstream_ttfb_seconds_count 1",
-		"pojiagw_relay_duration_seconds_count 1",
-		"pojiagw_request_duration_seconds_count 1",
-		`pojiagw_upstream_ttfb_seconds_bucket{le="0.05"} 1`,
+		"# TYPE gateway_manager_queue_duration_seconds histogram",
+		"gateway_manager_queue_duration_seconds_count 1",
+		"gateway_manager_upstream_ttfb_seconds_count 1",
+		"gateway_manager_relay_duration_seconds_count 1",
+		"gateway_manager_request_duration_seconds_count 1",
+		`gateway_manager_upstream_ttfb_seconds_bucket{le="0.05"} 1`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("缺少 %q", want)
@@ -1258,7 +1258,7 @@ func TestAlertRulesFileValid(t *testing.T) {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "expr:") {
 			exprCount++
-			if !strings.Contains(trimmed, "pojiagw_") && !strings.Contains(trimmed, "histogram_quantile") {
+			if !strings.Contains(trimmed, "gateway_manager_") && !strings.Contains(trimmed, "histogram_quantile") {
 				t.Fatalf("表达式未引用指标: %s", trimmed)
 			}
 		}
@@ -1335,7 +1335,7 @@ func TestSampleArchiveAndReplay(t *testing.T) {
 	cfg.Server.SampleEvery = 1
 	cfg.Server.SampleLimit = 5
 	cfg.Upstreams = []Upstream{{ID: "u", Name: "U", BaseURL: upstream.URL, Enabled: true}}
-	cfg.Rules = []Rule{{ID: "r-tag", Name: "标记", Type: ruleTypeHeader, HeaderName: "X-Gateway", HeaderValue: "pojiagw"}}
+	cfg.Rules = []Rule{{ID: "r-tag", Name: "标记", Type: ruleTypeHeader, HeaderName: "X-Gateway", HeaderValue: "gateway-manager"}}
 	gw := startGateway(t, cfg)
 
 	for i := 0; i < 2; i++ {
@@ -1401,7 +1401,7 @@ func TestRulesDSLRoundTrip(t *testing.T) {
 	rules := []Rule{
 		{
 			ID: "r-tag", Name: "打标记", Type: ruleTypeHeader,
-			HeaderName: "X-Gateway", HeaderValue: "pojiagw",
+			HeaderName: "X-Gateway", HeaderValue: "gateway-manager",
 		},
 		{
 			ID: "r-inject", Name: "极简", Type: ruleTypeInject,
@@ -1429,7 +1429,7 @@ func TestRulesDSLRoundTrip(t *testing.T) {
 	if len(parsed) != len(rules) {
 		t.Fatalf("规则数量不一致: %d vs %d", len(parsed), len(rules))
 	}
-	if parsed[0].Type != ruleTypeHeader || parsed[0].HeaderName != "X-Gateway" || parsed[0].HeaderValue != "pojiagw" {
+	if parsed[0].Type != ruleTypeHeader || parsed[0].HeaderName != "X-Gateway" || parsed[0].HeaderValue != "gateway-manager" {
 		t.Fatalf("header 规则往返错误: %+v", parsed[0])
 	}
 	if parsed[1].Cond == nil || len(parsed[1].Cond.Models) != 2 || parsed[1].Cond.HeaderKey != "X-Client" ||
@@ -1543,10 +1543,10 @@ func TestBudgetExhaustion(t *testing.T) {
 	}
 	metRaw, _ := io.ReadAll(met.Body)
 	met.Body.Close()
-	if !strings.Contains(string(metRaw), `pojiagw_budget_exhausted{upstream="u",name="U"} 1`) {
+	if !strings.Contains(string(metRaw), `gateway_manager_budget_exhausted{upstream="u",name="U"} 1`) {
 		t.Fatalf("预算指标缺失")
 	}
-	if !strings.Contains(string(metRaw), `pojiagw_budget_requests_used{upstream="u",name="U"} 2`) {
+	if !strings.Contains(string(metRaw), `gateway_manager_budget_requests_used{upstream="u",name="U"} 2`) {
 		t.Fatalf("预算用量指标缺失")
 	}
 }
@@ -1713,7 +1713,7 @@ func TestTokenUsageAndBudgetReconcile(t *testing.T) {
 	}
 	metRaw, _ := io.ReadAll(met.Body)
 	met.Body.Close()
-	if !strings.Contains(string(metRaw), `pojiagw_tokens_total{upstream="u",name="U"} 15`) {
+	if !strings.Contains(string(metRaw), `gateway_manager_tokens_total{upstream="u",name="U"} 15`) {
 		t.Fatalf("token 指标缺失")
 	}
 }
@@ -1740,7 +1740,7 @@ func TestTokenUsageFromSSE(t *testing.T) {
 	}
 	metRaw, _ := io.ReadAll(met.Body)
 	met.Body.Close()
-	if !strings.Contains(string(metRaw), `pojiagw_tokens_total{upstream="u",name="U"} 10`) {
+	if !strings.Contains(string(metRaw), `gateway_manager_tokens_total{upstream="u",name="U"} 10`) {
 		t.Fatalf("流式 token 指标缺失")
 	}
 }
@@ -1965,7 +1965,7 @@ func TestMirrorShadowDelivery(t *testing.T) {
 		if err == nil {
 			raw, _ := io.ReadAll(res.Body)
 			res.Body.Close()
-			if strings.Contains(string(raw), `pojiagw_mirror_total{upstream="shadow",name="影子",result="ok"} 1`) {
+			if strings.Contains(string(raw), `gateway_manager_mirror_total{upstream="shadow",name="影子",result="ok"} 1`) {
 				return
 			}
 		}
@@ -2191,8 +2191,8 @@ func TestExperimentArmsSplit(t *testing.T) {
 	metRaw, _ := io.ReadAll(met.Body)
 	met.Body.Close()
 	for _, want := range []string{
-		`pojiagw_experiment_total{experiment="exp-1",arm="arm-a",result="all"} 2`,
-		`pojiagw_upstream_circuit{upstream="ua",name="上游A",state="closed"} 1`,
+		`gateway_manager_experiment_total{experiment="exp-1",arm="arm-a",result="all"} 2`,
+		`gateway_manager_upstream_circuit{upstream="ua",name="上游A",state="closed"} 1`,
 	} {
 		if !strings.Contains(string(metRaw), want) {
 			t.Fatalf("指标缺少 %q", want)
