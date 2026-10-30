@@ -40,6 +40,7 @@ type Channel struct {
 	Name     string            `json:"name,omitempty"`
 	Token    string            `json:"token,omitempty"`
 	Cookie   string            `json:"cookie,omitempty"`
+	Tokens   []string          `json:"tokens,omitempty"`
 	BaseURL  string            `json:"base_url,omitempty"`
 	Models   []string          `json:"models,omitempty"`
 	Headers  map[string]string `json:"headers,omitempty"`
@@ -159,7 +160,7 @@ func builtinChannelPresets() []ChannelPreset {
 }
 
 // channelAdapters：需要协议转换的渠道实现
-var channelAdapters = map[string]func(*Server, context.Context, Channel, ChannelPreset, []byte) (*http.Response, error){
+var channelAdapters = map[string]func(*Server, context.Context, Channel, ChannelPreset, []byte, string) (*http.Response, error){
 	"deepseek-web": (*Server).deepseekForward,
 	"runable":      (*Server).runableForward,
 	"genspark":     (*Server).gensparkForward,
@@ -192,7 +193,7 @@ func (c Channel) toUpstream(preset ChannelPreset) Upstream {
 		ID:          "ch-" + c.ID,
 		Name:        "渠道:" + name,
 		BaseURL:     base,
-		APIKeys:     keyList(c.Token),
+		APIKeys:     channelKeys(c),
 		Models:      models,
 		Priority:    c.Priority,
 		Weight:      c.Weight,
@@ -203,11 +204,23 @@ func (c Channel) toUpstream(preset ChannelPreset) Upstream {
 	}
 }
 
-func keyList(token string) []string {
-	if strings.TrimSpace(token) == "" {
-		return []string{}
+func channelKeys(c Channel) []string {
+	seen := make(map[string]bool, len(c.Tokens)+2)
+	out := make([]string, 0, len(c.Tokens)+2)
+	appendKey := func(raw string) {
+		value := strings.TrimSpace(raw)
+		if value == "" || seen[value] {
+			return
+		}
+		seen[value] = true
+		out = append(out, value)
 	}
-	return []string{token}
+	appendKey(c.Token)
+	appendKey(c.Cookie)
+	for _, extra := range c.Tokens {
+		appendKey(extra)
+	}
+	return out
 }
 
 func mergeHeaders(base map[string]string, override map[string]string) map[string]string {

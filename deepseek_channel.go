@@ -13,7 +13,7 @@ import (
 )
 
 // deepseekForward 把 OpenAI 请求转成 DeepSeek 网页协议，再把他们的 SSE 还原成 OpenAI 格式
-func (s *Server) deepseekForward(ctx context.Context, ch Channel, preset ChannelPreset, payload []byte) (*http.Response, error) {
+func (s *Server) deepseekForward(ctx context.Context, ch Channel, preset ChannelPreset, payload []byte, credential string) (*http.Response, error) {
 	var req map[string]any
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return nil, fmt.Errorf("请求体不是 JSON：%v", err)
@@ -29,6 +29,10 @@ func (s *Server) deepseekForward(ctx context.Context, ch Channel, preset Channel
 
 	cookie := strings.TrimSpace(ch.Cookie)
 	token := strings.TrimSpace(ch.Token)
+	if cred := strings.TrimSpace(credential); cred != "" {
+		token = cred
+		cookie = cred
+	}
 	if strings.Contains(token, "=") && strings.Contains(token, "ds_session_id") {
 		cookie, token = token, ""
 	}

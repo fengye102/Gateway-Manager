@@ -708,7 +708,7 @@
           '<td class="mono fg-strong">' + esc(c.id) + '</td>' +
           '<td>' + esc(c.name) + '</td>' +
           '<td class="mono muted">' + esc(c.preset) + '</td>' +
-          '<td class="mono">' + esc(c.has_token ? c.token_masked : '未填写') + '</td>' +
+          '<td class="mono">' + esc(c.has_token ? c.token_masked : '未填写') + ((c.key_count || 0) > 1 ? ' <span class="chip soft">' + c.key_count + ' 个账号</span>' : '') + '</td>' +
           '<td>' + (c.enabled ? '<span class="chip success">已启用</span>' : '<span class="chip soft">已停用</span>') + '</td>' +
           '<td class="num mono">' + (c.priority || 0) + '</td>' +
           '<td class="num mono">' + (c.weight || 0) + '</td>' +

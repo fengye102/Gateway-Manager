@@ -535,7 +535,7 @@ func (s *Server) forward(ctx context.Context, up *Upstream, kind endpointKind, u
 	if up.ChannelID != "" {
 		if ch, preset, ok := s.store.channelByID(up.ChannelID); ok {
 			if fn, has := channelAdapters[preset.ID]; has {
-				return fn(s, ctx, ch, preset, payload)
+				return fn(s, ctx, ch, preset, payload, key)
 			}
 		}
 	}

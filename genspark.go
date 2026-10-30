@@ -195,7 +195,7 @@ func parseGensparkStream(r io.Reader, onDelta func(string)) gensparkResult {
 	return out
 }
 
-func (s *Server) gensparkForward(ctx context.Context, ch Channel, preset ChannelPreset, payload []byte) (*http.Response, error) {
+func (s *Server) gensparkForward(ctx context.Context, ch Channel, preset ChannelPreset, payload []byte, credential string) (*http.Response, error) {
 	var req map[string]any
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return nil, fmt.Errorf("请求体不是 JSON：%v", err)
@@ -208,7 +208,10 @@ func (s *Server) gensparkForward(ctx context.Context, ch Channel, preset Channel
 		return nil, fmt.Errorf("messages 为空")
 	}
 
-	cookie := strings.TrimSpace(ch.Cookie)
+	cookie := strings.TrimSpace(credential)
+	if cookie == "" {
+		cookie = strings.TrimSpace(ch.Cookie)
+	}
 	if cookie == "" {
 		cookie = strings.TrimSpace(ch.Token)
 	}

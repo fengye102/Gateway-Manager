@@ -248,7 +248,7 @@ func looseText(data string) string {
 	return ""
 }
 
-func (s *Server) runableForward(ctx context.Context, ch Channel, preset ChannelPreset, payload []byte) (*http.Response, error) {
+func (s *Server) runableForward(ctx context.Context, ch Channel, preset ChannelPreset, payload []byte, credential string) (*http.Response, error) {
 	var req map[string]any
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return nil, fmt.Errorf("请求体不是 JSON：%v", err)
@@ -267,7 +267,10 @@ func (s *Server) runableForward(ctx context.Context, ch Channel, preset ChannelP
 		return nil, fmt.Errorf("请求里没有可发送的内容")
 	}
 
-	cookie := strings.TrimSpace(ch.Cookie)
+	cookie := strings.TrimSpace(credential)
+	if cookie == "" {
+		cookie = strings.TrimSpace(ch.Cookie)
+	}
 	if cookie == "" {
 		cookie = strings.TrimSpace(ch.Token)
 	}

@@ -213,6 +213,9 @@ func maskKey(k string) string {
 	if k == "" {
 		return "(无)"
 	}
+	if strings.Contains(k, "=") && strings.Contains(k, ";") {
+		return "ck-" + keyFingerprint(k)[:6]
+	}
 	if len(k) <= 2 {
 		return strings.Repeat("*", len(k))
 	}

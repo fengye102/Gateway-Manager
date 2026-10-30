@@ -462,6 +462,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 					"priority": ch.Priority, "weight": ch.Weight, "enabled": ch.Enabled,
 					"token_masked": maskKey(ch.Token),
 					"has_token":    strings.TrimSpace(ch.Token) != "",
+					"key_count":    len(channelKeys(ch)),
 					"protocol":     preset.Protocol,
 					"upstream_id":  "ch-" + ch.ID,
 					"notes":        preset.Notes,
@@ -753,6 +754,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 			Model    string `json:"model"`
 			TokenKey string `json:"token_key"`
 			Enabled  *bool  `json:"enabled"`
+			Replace  bool   `json:"replace"`
 		}
 		if err := s.readJSONBody(r, &payload); err != nil {
 			proxyError(w, http.StatusBadRequest, err.Error())
@@ -803,16 +805,40 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 		if payload.Enabled != nil {
 			enabled = *payload.Enabled
 		}
+		if payload.Replace {
+			for i := range next.Channels {
+				if next.Channels[i].ID == id {
+					next.Channels[i].Tokens = nil
+				}
+			}
+		}
 		found := false
+		appended := false
 		for i := range next.Channels {
-			if next.Channels[i].ID == id {
-				next.Channels[i].Preset = preset.ID
+			if next.Channels[i].ID != id {
+				continue
+			}
+			next.Channels[i].Preset = preset.ID
+			next.Channels[i].Enabled = enabled
+			found = true
+			existing := channelKeys(next.Channels[i])
+			duplicated := false
+			for _, have := range existing {
+				if have == token {
+					duplicated = true
+					break
+				}
+			}
+			switch {
+			case duplicated:
+			case strings.TrimSpace(next.Channels[i].Token) == "":
 				next.Channels[i].Token = token
 				if cookieValue != "" {
 					next.Channels[i].Cookie = cookieValue
 				}
-				next.Channels[i].Enabled = enabled
-				found = true
+			default:
+				next.Channels[i].Tokens = append(append([]string{}, next.Channels[i].Tokens...), token)
+				appended = true
 			}
 		}
 		if !found {
@@ -820,6 +846,12 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 				ID: id, Preset: preset.ID, Name: preset.Name, Token: token, Cookie: cookieValue,
 				Enabled: enabled, Headers: map[string]string{},
 			})
+		}
+		keyCount := 0
+		for i := range next.Channels {
+			if next.Channels[i].ID == id {
+				keyCount = len(channelKeys(next.Channels[i]))
+			}
 		}
 		s.autoSnapshot("before-channel-login")
 		if err := s.saveConfigAndReload(next); err != nil {
@@ -834,7 +866,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok": true, "id": id, "upstream_id": "ch-" + id,
 			"cookie_count": len(cookies), "token_masked": maskKey(token),
-			"token_kind": tokenKind,
+			"token_kind": tokenKind, "key_count": keyCount, "appended": appended,
 		})
 
 	case "channels/login/cancel":
