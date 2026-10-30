@@ -117,23 +117,30 @@ func TestResponsesAndMessagesInjection(t *testing.T) {
 		t.Fatalf("instructions 拼接错误: %q", got)
 	}
 
+	// v2.9.1 起 /v1/messages 对 OpenAI 上游做方言翻译：system 注入后
+	// 以 role:"system" 消息的形式出现在上游收到的 messages 头部
 	if resp, body := postJSON(t, gw.URL+"/v1/messages", `{"model":"x","system":"原系统","messages":[]}`, nil); resp.StatusCode != 200 {
 		t.Fatalf("messages 失败 %d: %s", resp.StatusCode, body)
 	}
-	if got := jsonStringField(lastBody, "system"); got != "INS\n\n原系统" {
-		t.Fatalf("system 拼接错误: %q", got)
+	msgs, ok := lastBody["messages"].([]any)
+	if !ok || len(msgs) == 0 {
+		t.Fatalf("上游未收到翻译后的 messages: %#v", lastBody)
+	}
+	first, _ := msgs[0].(map[string]any)
+	if jsonStringField(first, "role") != "system" || jsonStringField(first, "content") != "INS\n\n原系统" {
+		t.Fatalf("system 应翻译为 system 消息并拼接策略: %#v", first)
 	}
 
 	if resp, body := postJSON(t, gw.URL+"/v1/messages", `{"model":"x","system":[{"type":"text","text":"旧"}],"messages":[]}`, nil); resp.StatusCode != 200 {
 		t.Fatalf("messages 失败 %d: %s", resp.StatusCode, body)
 	}
-	arr, ok := lastBody["system"].([]any)
-	if !ok || len(arr) != 2 {
-		t.Fatalf("system 数组注入失败: %#v", lastBody["system"])
+	msgs2, ok := lastBody["messages"].([]any)
+	if !ok || len(msgs2) == 0 {
+		t.Fatalf("上游未收到翻译后的 messages: %#v", lastBody)
 	}
-	last, _ := arr[1].(map[string]any)
-	if jsonStringField(last, "text") != "旧" {
-		t.Fatalf("system 数组原有内容被破坏: %#v", last)
+	first2, _ := msgs2[0].(map[string]any)
+	if jsonStringField(first2, "role") != "system" || jsonStringField(first2, "content") != "INS\n旧" {
+		t.Fatalf("system 数组应拼进 system 消息: %#v", first2)
 	}
 }
 

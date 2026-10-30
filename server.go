@@ -100,7 +100,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	case "/health":
-		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": version})
 		return
 	case "/metrics":
 		s.handleMetrics(w, r)
@@ -334,6 +334,19 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request, kind endpoi
 			return
 		}
 
+		forwardKind := kind
+		if kind == epMessages && !upstreamAnthropicNative(cfg, up) {
+			// 上游只会讲 OpenAI 方言：把 Anthropic 请求翻译成 chat/completions
+			translated, terr := anthropicRequestToOpenAI(payload)
+			if terr != nil {
+				s.store.ObserveRequest(kind.String(), http.StatusBadRequest, time.Since(requestStarted))
+				proxyError(w, http.StatusBadRequest, "Anthropic 请求翻译失败："+terr.Error())
+				return
+			}
+			payload = translated
+			forwardKind = epChat
+		}
+
 		estTokens := estimateTokens(payload)
 		if okBudget, budgetReason := s.store.CheckBudget(up, estTokens); !okBudget {
 			exhaust(up)
@@ -353,7 +366,7 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request, kind endpoi
 		queued := time.Since(requestStarted)
 
 		started := time.Now()
-		resp, ferr := s.forward(r.Context(), up, kind, upstreamPath, payload, l.keyValue(), outcome.Headers)
+		resp, ferr := s.forward(r.Context(), up, forwardKind, upstreamPath, payload, l.keyValue(), outcome.Headers)
 		if ferr != nil {
 			s.store.RecordFailure(l, 0, ferr.Error())
 			s.store.ObserveUpstream(up.ID, 0, time.Since(started))
@@ -406,7 +419,14 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request, kind endpoi
 		s.store.Info("%s → %s HTTP %d · %s · key %s · %.0fms · stream=%v",
 			kind, up.Name, resp.StatusCode, source, l.keyLabel(),
 			float64(time.Since(started).Milliseconds()), wantStream)
-		tokens, hasUsage := s.relay(w, resp, wantStream, kind)
+		var tokens int
+		var hasUsage bool
+		if kind == epMessages && forwardKind == epChat {
+			// Anthropic 客户端 ← OpenAI 上游：响应也要翻译回 Anthropic 形状
+			tokens, hasUsage = s.relayAnthropicFromOpenAI(w, resp, wantStream)
+		} else {
+			tokens, hasUsage = s.relay(w, resp, wantStream, kind)
+		}
 		if hasUsage {
 			s.store.AddTokenUsage(up.ID, tokens)
 			s.store.ReconcileBudget(up, estTokens, tokens)
@@ -421,7 +441,7 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request, kind endpoi
 		}
 		s.store.ObserveTiming(queued, ttfb, relayDur)
 		s.store.ObserveRequest(kind.String(), resp.StatusCode, total)
-		s.maybeMirror(r.Context(), cfg, up, kind, upstreamPath, payload, outcome, model)
+		s.maybeMirror(r.Context(), cfg, up, forwardKind, upstreamPath, payload, outcome, model)
 		if s.store.ShouldSample() {
 			bodyText, truncated := truncateBody(body, 8192)
 			s.store.AddSample(ReplayEntry{

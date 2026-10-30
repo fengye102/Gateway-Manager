@@ -427,7 +427,12 @@
     const ups = d.upstreams || [];
 
     if (d.version) $('versionBadge').textContent = 'v' + d.version;
-    state.endpointUrl = d.endpoint || ('http://' + (d.bind || '127.0.0.1') + ':' + (d.port || 7878) + '/v1');
+    if (d.bind === '0.0.0.0' || d.bind === '::' || d.bind === '' || !d.bind) {
+      /* 通配监听时客户端实际要用浏览器访问的地址，而不是 0.0.0.0 */
+      state.endpointUrl = location.origin + '/v1';
+    } else {
+      state.endpointUrl = d.endpoint || ('http://' + (d.bind || '127.0.0.1') + ':' + (d.port || 7878) + '/v1');
+    }
     $('endpointText').textContent = state.endpointUrl.replace(/^https?:\/\//, '');
 
     let healthyUps = 0;
@@ -1171,6 +1176,14 @@
       toast('管理密钥已保存', '正在重新同步网关状态...', 'success');
       bootstrapAll();
     });
+    /* /metrics 需要 admin token：点链接时自动带上，避免新开页 401 */
+    const metricsLink = document.querySelector('a.live-link[href="/metrics"]');
+    if (metricsLink) metricsLink.addEventListener('click', function (ev) {
+      const t = getToken();
+      if (!t) return;
+      ev.preventDefault();
+      window.open('/metrics?token=' + encodeURIComponent(t), '_blank', 'noopener');
+    });
 
     /* Modal Close */
     $('modalCloseBtn').addEventListener('click', function () { closeModal(null); });
@@ -1513,15 +1526,31 @@
     loadKeys();
   }
 
-  /* Restore Token */
+  /* Restore Token：URL ?token= 优先（控制台链接可直接分享），其次 localStorage */
   try {
-    const savedToken = localStorage.getItem('gateway_manager_token');
-    if (savedToken) $('tokenInput').value = savedToken;
+    const urlToken = new URLSearchParams(location.search).get('token');
+    if (urlToken && urlToken.trim()) {
+      $('tokenInput').value = urlToken.trim();
+      try { localStorage.setItem('gateway_manager_token', urlToken.trim()); } catch (e) {}
+      history.replaceState(null, '', location.pathname);
+    } else {
+      const savedToken = localStorage.getItem('gateway_manager_token');
+      if (savedToken) $('tokenInput').value = savedToken;
+    }
   } catch (e) {}
   updateTokenDot();
 
   bindEvents();
   bootstrapAll();
+
+  /* 连接前也从无鉴权的 /health 取真实版本号、预填端点显示 */
+  try {
+    fetch('/health').then(function (r) { return r.json(); }).then(function (h) {
+      if (h && h.version) $('versionBadge').textContent = 'v' + h.version;
+    }).catch(function () {});
+    const ep = $('endpointText');
+    if (ep && !ep.textContent) ep.textContent = location.host + '/v1';
+  } catch (e) {}
 
   /* Visibility-aware smart polling (matches cli2api behavior) */
   setInterval(function () {
