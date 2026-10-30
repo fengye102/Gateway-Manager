@@ -65,20 +65,6 @@
           </button>
         </div>
 
-        <div class="nav-group">
-          <span class="nav-group-label">治理与注入</span>
-          <span class="nav-group-sep" aria-hidden="true"></span>
-          <button type="button" class="nav-item" data-sidebar-item data-tab="rules" data-tooltip="规则引擎">
-            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            <span class="nav-label">规则引擎</span>
-            <span class="nav-count mono" id="navRuleCount">0</span>
-          </button>
-          <button type="button" class="nav-item" data-sidebar-item data-tab="profiles" data-tooltip="策略模板">
-            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-            <span class="nav-label">策略模板</span>
-            <span class="nav-count mono" id="navProfileCount">0</span>
-          </button>
-        </div>
 
         <div class="nav-group">
           <span class="nav-group-label">系统运维</span>
@@ -430,6 +416,21 @@
               </div>
             </div>
 
+            <div class="card">
+              <div class="card-head">
+                <div>
+                  <h2 class="section-title">渠道账号池</h2>
+                  <p class="section-desc">同一渠道下的多个账号按健康分参与选路；低分、冷却中的账号会被自动跳过</p>
+                </div>
+                <div class="row-actions">
+                  <span class="chip soft mono" id="accountPoolSummary">0 个账号</span>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="account-grid" id="accountCards"></div>
+              </div>
+            </div>
+
             <div class="card flush">
               <div class="card-head">
                 <div>
@@ -502,304 +503,8 @@
           </section>
 
           <!-- ==================== 4. 规则引擎 ==================== -->
-          <section id="tab-rules" class="tab-view">
-            <div class="subnav-row">
-              <div class="segmented" id="ruleSubtabs">
-                <button type="button" class="seg-btn active" data-subtab="canvas">
-                  <span>规则流编排</span>
-                  <span class="dirty-dot" id="ruleDirtyDot" hidden></span>
-                </button>
-                <button type="button" class="seg-btn" data-subtab="debugger">规则试算器</button>
-                <button type="button" class="seg-btn" data-subtab="traffic">回放与批量回归</button>
-                <button type="button" class="seg-btn" data-subtab="dsl">规则书 DSL</button>
-              </div>
-            </div>
-
-            <!-- 4.1 规则流编排 -->
-            <div class="subtab-pane active" id="rule-sub-canvas">
-              <div class="alert-strip warn" id="ruleDirtyBanner" hidden>
-                <div class="alert-strip-text">
-                  <span class="status-dot" data-state="warn"></span>
-                  <span>当前规则链有未保存的本地改动，点击「保存规则链」后落盘并热生效。</span>
-                </div>
-                <div class="row-actions">
-                  <button type="button" class="btn ghost sm" id="reloadRulesBtn">放弃改动</button>
-                  <button type="button" class="btn primary sm" id="saveRulesBannerBtn">保存规则链</button>
-                </div>
-              </div>
-
-              <div class="data-toolbar">
-                <div class="toolbar-row">
-                  <span class="toolbar-caption">新增节点</span>
-                  <button type="button" class="btn secondary sm" data-add="match"><span class="type-dot match"></span>条件标记</button>
-                  <button type="button" class="btn secondary sm" data-add="inject"><span class="type-dot inject"></span>注入策略</button>
-                  <button type="button" class="btn secondary sm" data-add="override"><span class="type-dot override"></span>改写参数</button>
-                  <button type="button" class="btn secondary sm" data-add="header"><span class="type-dot header"></span>附加请求头</button>
-                  <button type="button" class="btn secondary sm" data-add="deny"><span class="type-dot deny"></span>拦截请求</button>
-                  <span class="toolbar-spacer"></span>
-                  <button type="button" class="btn ghost sm" id="resetRulesBtn">还原线上</button>
-                  <button type="button" class="btn primary sm" id="saveRulesTopBtn">保存规则链</button>
-                </div>
-              </div>
-
-              <div class="rule-pipeline" id="ruleCanvas"></div>
-
-              <div class="card flush">
-                <div class="card-head">
-                  <div>
-                    <h2 class="section-title">规则命中热力分布</h2>
-                    <p class="section-desc">按规则顺序统计命中、跳过与拦截次数，直观评估每条规则的实际触发频率</p>
-                  </div>
-                  <button type="button" class="btn danger-soft sm" id="resetHeatBtn">清零统计</button>
-                </div>
-                <div class="table-scroll">
-                  <table class="studio-table" id="heatTable">
-                    <thead>
-                      <tr>
-                        <th>规则节点</th>
-                        <th class="num">命中</th>
-                        <th class="num">跳过</th>
-                        <th class="num">拦截</th>
-                        <th class="num">命中占比</th>
-                        <th style="width:160px">12 段热力计</th>
-                        <th>最近触发</th>
-                      </tr>
-                    </thead>
-                    <tbody></tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-
-            <!-- 4.2 规则试算器 -->
-            <div class="subtab-pane" id="rule-sub-debugger">
-              <div class="split-2 align-start">
-                <div class="card">
-                  <div class="card-head">
-                    <div>
-                      <h2 class="section-title">模拟请求输入</h2>
-                      <p class="section-desc">干跑（Dry-Run）已保存的线上规则链，不消耗任何上游额度</p>
-                    </div>
-                  </div>
-                  <div class="card-body stack-md">
-                    <div class="form-row-2">
-                      <div class="field">
-                        <label for="testModel">请求模型 (model)</label>
-                        <input type="text" id="testModel" value="gpt-4o-mini" placeholder="gpt-4o-mini" />
-                      </div>
-                      <div class="field">
-                        <label for="testPath">接口路径 (path)</label>
-                        <select id="testPath">
-                          <option value="/v1/chat/completions">/v1/chat/completions</option>
-                          <option value="/v1/messages">/v1/messages</option>
-                          <option value="/v1/responses">/v1/responses</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div class="field">
-                      <div class="field-label-row">
-                        <label for="testBody">请求 JSON 正文</label>
-                        <button type="button" class="btn ghost xs" id="fmtTestBodyBtn">格式化 JSON</button>
-                      </div>
-                      <textarea id="testBody" class="code-editor" rows="10" spellcheck="false">{
-  "model": "gpt-4o-mini",
-  "messages": [
-    { "role": "user", "content": "hi" }
-  ]
-}</textarea>
-                    </div>
-                    <div class="row-end">
-                      <button type="button" class="btn primary sm" id="runTestBtn">执行规则试算</button>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="card">
-                  <div class="card-head">
-                    <div>
-                      <h2 class="section-title">试算执行报告</h2>
-                      <p class="section-desc">命中链路、参数覆写、指令注入及最终请求体预览</p>
-                    </div>
-                  </div>
-                  <div class="card-body">
-                    <div id="testOut" class="empty-state">点击左侧「执行规则试算」查看完整规则链演练结果</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- 4.3 回放与批量回归 -->
-            <div class="subtab-pane" id="rule-sub-traffic">
-              <div class="card">
-                <div class="card-head">
-                  <div>
-                    <h2 class="section-title">批量历史回归验证</h2>
-                    <p class="section-desc">抽取历史采样与拦截留档重跑当前规则链，检查放行/拦截比例与规则命中分布</p>
-                  </div>
-                  <div class="row-actions">
-                    <select id="batchFrom">
-                      <option value="both">采样 + 拦截回放</option>
-                      <option value="samples">仅用成功采样</option>
-                      <option value="replay">仅用拦截回放</option>
-                    </select>
-                    <input type="number" id="batchLimit" value="100" min="1" max="500" style="width:88px" />
-                    <button type="button" class="btn primary sm" id="runBatchBtn">运行回归</button>
-                  </div>
-                </div>
-                <div class="card-inset" id="batchOut" hidden></div>
-              </div>
-
-              <div class="card flush">
-                <div class="card-head">
-                  <div>
-                    <h2 class="section-title">拦截回放留档</h2>
-                    <p class="section-desc">最近被规则拒绝的请求（敏感 Header 已脱敏），调整规则后可单条复现</p>
-                  </div>
-                  <div class="row-actions">
-                    <button type="button" class="btn outline sm" id="reloadReplayBtn">刷新</button>
-                    <button type="button" class="btn danger-soft sm" id="clearReplayBtn">清空留档</button>
-                  </div>
-                </div>
-                <div class="table-scroll">
-                  <table class="studio-table" id="replayTable">
-                    <thead>
-                      <tr>
-                        <th>拦截时间</th>
-                        <th>请求端点</th>
-                        <th>模型</th>
-                        <th>HTTP</th>
-                        <th>命中规则</th>
-                        <th>拒绝提示</th>
-                        <th style="width:84px">操作</th>
-                      </tr>
-                    </thead>
-                    <tbody></tbody>
-                  </table>
-                </div>
-                <div class="card-inset" id="replayOut" hidden></div>
-              </div>
-
-              <div class="card flush">
-                <div class="card-head">
-                  <div>
-                    <h2 class="section-title">成功请求采样</h2>
-                    <p class="section-desc" id="sampleHint">按 <code class="mono">server.sample_every</code> 抽样保存的正向请求，可复现检验新规则是否误拦</p>
-                  </div>
-                  <div class="row-actions">
-                    <button type="button" class="btn outline sm" id="reloadSamplesBtn">刷新</button>
-                    <button type="button" class="btn danger-soft sm" id="clearSamplesBtn">清空采样</button>
-                  </div>
-                </div>
-                <div class="table-scroll">
-                  <table class="studio-table" id="sampleTable">
-                    <thead>
-                      <tr>
-                        <th>采样时间</th>
-                        <th>请求端点</th>
-                        <th>模型</th>
-                        <th>HTTP</th>
-                        <th>实际转发上游</th>
-                        <th class="num">耗时</th>
-                        <th style="width:84px">操作</th>
-                      </tr>
-                    </thead>
-                    <tbody></tbody>
-                  </table>
-                </div>
-                <div class="card-inset" id="sampleOut" hidden></div>
-              </div>
-            </div>
-
-            <!-- 4.4 规则书 DSL -->
-            <div class="subtab-pane" id="rule-sub-dsl">
-              <div class="card">
-                <div class="card-head">
-                  <div>
-                    <h2 class="section-title">规则书 DSL 文本模式</h2>
-                    <p class="section-desc">结构化规则定义语言，与图形化编排画布实时双向同步，支持行级语法校验</p>
-                  </div>
-                  <div class="row-actions">
-                    <button type="button" class="btn outline sm" id="dslGenBtn">从当前规则生成</button>
-                    <button type="button" class="btn outline sm" id="dslCheckBtn">校验语法</button>
-                    <button type="button" class="btn primary sm" id="dslApplyBtn">解析并应用</button>
-                  </div>
-                </div>
-                <div class="card-body stack-sm">
-                  <div class="inline-notice" id="dslHint" hidden></div>
-                  <textarea id="dslBox" class="code-editor tall" spellcheck="false" placeholder="- id: r-tag&#10;  name: 打网关标记&#10;  type: header&#10;  action:&#10;    header_name: X-Gateway&#10;    header_value: gateway-manager"></textarea>
-                </div>
-              </div>
-            </div>
-          </section>
 
           <!-- ==================== 5. 策略模板 ==================== -->
-          <section id="tab-profiles" class="tab-view">
-            <div class="profiles-layout">
-              <div class="card tpl-pane">
-                <div class="card-head compact">
-                  <h2 class="section-title">指令模板库</h2>
-                  <span class="chip soft mono" id="tplCount">0</span>
-                </div>
-                <div class="tpl-search-wrap">
-                  <div class="search-field full">
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    <input type="text" id="tplSearch" placeholder="搜索模板名称、分类或标签..." />
-                  </div>
-                </div>
-                <div class="tpl-list" id="tplList"></div>
-              </div>
-
-              <div class="stack-md">
-                <div class="card">
-                  <div class="card-head">
-                    <div>
-                      <h2 class="section-title" id="tplTitle">选择一个模板或直接编写</h2>
-                      <p class="section-desc" id="tplMeta">编辑 System 指令正文，可保存为自定义模板或直接应用到线上策略</p>
-                    </div>
-                    <div class="row-actions">
-                      <button type="button" class="btn outline sm" id="saveTplBtn">保存为自定义模板</button>
-                      <button type="button" class="btn danger-soft sm" id="delTplBtn">删除自定义模板</button>
-                    </div>
-                  </div>
-                  <div class="card-body stack-md">
-                    <textarea id="tplText" class="code-editor" rows="8" placeholder="在此输入要自动注入到请求中的 System Prompt 指令..."></textarea>
-                    <div class="apply-row">
-                      <select id="applyMode">
-                        <option value="new">新建策略</option>
-                        <option value="overwrite">覆盖已有策略</option>
-                      </select>
-                      <select id="applyTarget"></select>
-                      <input type="text" id="applyName" placeholder="策略名称（可选）" />
-                      <button type="button" class="btn primary sm" id="applyTplBtn">应用到策略</button>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="card flush">
-                  <div class="card-head">
-                    <div>
-                      <h2 class="section-title">当前生效策略列表</h2>
-                      <p class="section-desc">按模型名称自动匹配或由规则链 <code class="mono">inject</code> 节点显式引用</p>
-                    </div>
-                  </div>
-                  <div class="table-scroll">
-                    <table class="studio-table" id="profTable">
-                      <thead>
-                        <tr>
-                          <th style="width:140px">策略 ID</th>
-                          <th style="width:160px">名称</th>
-                          <th style="width:86px">状态</th>
-                          <th style="width:180px">适用模型</th>
-                          <th>指令内容预览</th>
-                        </tr>
-                      </thead>
-                      <tbody></tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
 
           <!-- ==================== 6. 实时日志 ==================== -->
           <section id="tab-logs" class="tab-view">

@@ -5,8 +5,6 @@
     status: { title: '概览看板', desc: '本机网关聚合、多 Key 健康选路与策略规则实时状态' },
     upstreams: { title: '上游节点', desc: '多上游优先级路由、熔断退避与 Key 池 12 段健康打分' },
     channels: { title: '账号渠道', desc: '内置厂商渠道模板、浏览器 CDP 登录抓取与探活诊断' },
-    rules: { title: '规则引擎', desc: '请求匹配、系统提示词注入、参数覆写、拦截与回归演练' },
-    profiles: { title: '策略模板', desc: 'System Prompt 模板库管理与模型级自动注入策略' },
     logs: { title: '实时日志', desc: '网关内存环形日志缓冲，支持按级别与关键字实时检索' },
     config: { title: '配置与快照', desc: '全局 JSON 配置无感热重载、自动备份快照与 Git 版本库' },
     keys: { title: '接入密钥', desc: '调用网关所需的 API Key 创建、展示、复制与吊销' }
@@ -35,7 +33,6 @@
     paused: false,
     status: null,
     logs: [],
-    rules: [],
     rulesHash: '',
     dirty: false,
     editing: -1,
@@ -280,22 +277,6 @@
     $('sidebarBackdrop').classList.remove('open');
   }
 
-  function switchRuleSub(sub) {
-    state.ruleSub = sub;
-    document.querySelectorAll('#ruleSubtabs .seg-btn').forEach(function (b) {
-      b.classList.toggle('active', b.dataset.subtab === sub);
-    });
-    ['canvas', 'debugger', 'traffic', 'dsl'].forEach(function (k) {
-      const pane = $('rule-sub-' + k);
-      if (pane) pane.classList.toggle('active', k === sub);
-    });
-    if (sub === 'dsl') loadDSL();
-    if (sub === 'traffic') {
-      loadReplay();
-      loadSamples();
-    }
-  }
-
   function switchCfgSub(sub) {
     state.cfgSub = sub;
     document.querySelectorAll('#configSubtabs .seg-btn').forEach(function (b) {
@@ -307,12 +288,6 @@
     });
   }
 
-  function updateDirtyUI() {
-    $('ruleDirtyBanner').hidden = !state.dirty;
-    $('ruleDirtyDot').hidden = !state.dirty;
-  }
-
-  /* ---------- Sparkline & Status Rendering ---------- */
   function pushSparkSample(totalReqs) {
     const num = Number(totalReqs || 0);
     let delta = 0;
@@ -385,11 +360,71 @@
       .catch(function () {});
   }
 
+/* ---------- Channel Account Pool Cards ---------- */
+  function accountStateInfo(k) {
+    const coolingLeft = Number(k.cooldown_until || 0) - Math.floor(Date.now() / 1000);
+    const score = Number(k.score || 0);
+    if (coolingLeft > 0) return { tone: 'warn', label: '冷却 ' + coolingLeft + 's' };
+    if (k.state && k.state !== 'ok') return { tone: 'warn', label: String(k.state) };
+    if (score < 40) return { tone: 'danger', label: '低分' };
+    if (score < 70) return { tone: 'warn', label: '观察中' };
+    return { tone: 'ok', label: '可用' };
+  }
+
+  function renderAccountCards(d) {
+    const grid = $('accountCards');
+    if (!grid) return;
+    const ups = d.upstreams || [];
+    const cards = [];
+    let total = 0;
+    let activeUps = 0;
+
+    ups.forEach(function (u) {
+      const keys = u.keys || [];
+      if (keys.length) activeUps++;
+      keys.forEach(function (k, idx) {
+        total++;
+        const info = accountStateInfo(k);
+        const reqs = Number(k.requests || 0);
+        const okCount = Number(k.successes || 0);
+        const rate = reqs > 0 ? Math.round((okCount / reqs) * 100) + '%' : '—';
+        const latency = Number(k.latency_ms || 0) > 0 ? (Number(k.latency_ms) / 1000).toFixed(1) + 's' : '—';
+        const coolingLeft = Math.max(0, Number(k.cooldown_until || 0) - Math.floor(Date.now() / 1000));
+        const chipTone = info.tone === 'ok' ? 'success' : (info.tone === 'danger' ? 'danger' : 'warning');
+        cards.push(
+          '<article class="account-card">' +
+            '<header class="account-head">' +
+              '<span class="status-dot" data-state="' + info.tone + '"></span>' +
+              '<div class="account-id">' +
+                '<strong>账号 #' + (idx + 1) + '</strong>' +
+                '<span class="mono">' + esc(k.masked || '-') + '</span>' +
+              '</div>' +
+              '<span class="chip ' + chipTone + '">' + esc(info.label) + '</span>' +
+            '</header>' +
+            '<div class="account-channel">' + esc(u.name || u.id || '') + '</div>' +
+            '<div class="account-score">' +
+              '<strong>' + Math.round(Number(k.score || 0)) + '</strong>' +
+              renderMeter(k.score, info.tone) +
+            '</div>' +
+            '<dl class="account-stats">' +
+              '<div><dt>请求</dt><dd>' + reqs + '</dd></div>' +
+              '<div><dt>成功率</dt><dd>' + rate + '</dd></div>' +
+              '<div><dt>延迟</dt><dd>' + latency + '</dd></div>' +
+              '<div><dt>冷却</dt><dd>' + (coolingLeft > 0 ? coolingLeft + 's' : '—') + '</dd></div>' +
+            '</dl>' +
+          '</article>'
+        );
+      });
+    });
+
+    grid.innerHTML = cards.join('');
+    const summary = $('accountPoolSummary');
+    if (summary) summary.textContent = total + ' 个账号 · ' + activeUps + ' 个渠道';
+  }
+
   function renderStatus(d) {
     const s = d.stats || {};
     const ups = d.upstreams || [];
-    const rules = d.rules || [];
-    const profiles = d.profiles || [];
 
     if (d.version) $('versionBadge').textContent = 'v' + d.version;
     state.endpointUrl = d.endpoint || ('http://' + (d.bind || '127.0.0.1') + ':' + (d.port || 7878) + '/v1');
@@ -404,8 +439,6 @@
 
     /* Sidebar counters & live status */
     $('navUpstreamCount').textContent = String(ups.length);
-    $('navRuleCount').textContent = String(rules.length);
-    $('navProfileCount').textContent = String(profiles.length);
 
     $('sidebarUpChip').textContent = healthyUps + '/' + ups.length;
     $('sidebarUpChip').className = 'chip mono ' + (ups.length === 0 || healthyUps > 0 ? 'success' : 'warning');
@@ -434,7 +467,7 @@
     $('kpiUptimeFoot').textContent = '运行时长 ' + (d.uptime || '—') + ' · ' + (d.bind || '127.0.0.1') + ':' + (d.port || 7878);
     $('kpiUpstreams').textContent = healthyUps + ' / ' + ups.length;
     $('dotUpstreams').setAttribute('data-state', ups.length === 0 || healthyUps > 0 ? 'ok' : 'danger');
-    $('kpiRoutingFoot').textContent = '规则 ' + rules.length + ' · 策略 ' + profiles.length;
+    $('kpiRoutingFoot').textContent = '上游 ' + ups.length + ' 个 · 健康 ' + healthyUps + ' 个';
 
     $('kpiInjected').textContent = formatCompact(profInj + ruleInj);
     $('kpiInjectFoot').textContent = '策略 ' + profInj + ' · 规则 ' + ruleInj + ' · 透传 ' + passthrough;
@@ -501,19 +534,7 @@
 
     renderExperiments(d);
     renderUpstreams(ups);
-    renderProfiles(profiles);
-    buildApplyTargets(profiles);
-
-    /* Non-destructive rule sync */
-    if (!state.dirty && state.editing === -1) {
-      const nextHash = JSON.stringify({ r: rules, st: d.rule_stats || {} });
-      if (nextHash !== state.rulesHash) {
-        state.rulesHash = nextHash;
-        state.rules = JSON.parse(JSON.stringify(rules));
-        renderRules();
-      }
-    }
-    renderHeat(d);
+    renderAccountCards(d);
   }
 
   /* ---------- Experiments & Federation ---------- */
@@ -888,505 +909,6 @@
   }
 
   /* ---------- Rules Pipeline Canvas & Heat ---------- */
-  function condSummary(r) {
-    const c = r.condition || {};
-    const parts = [];
-    if (c.models && c.models.length) parts.push('model ~ ' + c.models.join(' | '));
-    if (c.paths && c.paths.length) parts.push('path ~ ' + c.paths.join(' | '));
-    if (c.header_key) parts.push('header ' + c.header_key + (c.header_value ? ' 含 ' + c.header_value : ''));
-    if (c.body_contains) parts.push('body 含 "' + c.body_contains + '"');
-    if (c.expr) parts.push('expr: ' + c.expr);
-    return parts.length ? ('触发条件：' + parts.join(' · ')) : '触发条件：总是命中（无过滤约束）';
-  }
-
-  function actionSummary(r) {
-    if (r.type === 'inject') {
-      return '注入动作：' + (r.profile_id ? ('引用策略 [' + r.profile_id + ']') : (r.instruction || '（空指令）'));
-    }
-    if (r.type === 'override') {
-      const bits = [];
-      if (r.set_model) bits.push('model → ' + r.set_model);
-      if (r.set_params) bits.push('params ' + JSON.stringify(r.set_params));
-      return bits.length ? ('参数改写：' + bits.join(' · ')) : '参数改写：（尚未设置）';
-    }
-    if (r.type === 'header') {
-      return '附加请求头：' + (r.header_name || '—') + ' = ' + (r.header_value || '');
-    }
-    if (r.type === 'deny') {
-      return '拒绝请求：HTTP ' + (r.status || 403) + ' · ' + (r.message || '');
-    }
-    return '仅作为命中观测标记，不改动转发报文';
-  }
-
-  function ruleStatOf(id) {
-    const map = (state.status && state.status.rule_stats) || {};
-    return map[id] || { matched: 0, skipped: 0, denied: 0, last_hit: 0 };
-  }
-
-  function renderRules() {
-    updateDirtyUI();
-    const canvas = $('ruleCanvas');
-    if (!state.rules.length) {
-      canvas.innerHTML = '<div class="card"><div class="empty-state">当前没有配置任何规则节点，点击上方工具栏按钮即可添加并拖拽编排顺序。</div></div>';
-      return;
-    }
-
-    canvas.innerHTML = state.rules.map(function (r, idx) {
-      const st = ruleStatOf(r.id);
-      const total = st.matched + st.skipped;
-      const ratio = total ? Math.round((st.matched * 100) / total) : 0;
-      const tone = ratio >= 70 ? 'danger' : (ratio >= 30 ? 'warn' : 'ok');
-      const stepNo = String(idx + 1).padStart(2, '0');
-      const chipCls = TYPE_CHIP[r.type] || 'soft';
-
-      return '<div class="rule-node' + (r.disabled ? ' is-disabled' : '') + '" draggable="' + (state.editing === idx ? 'false' : 'true') + '" data-i="' + idx + '">' +
-        '<div class="rule-grip" title="拖拽调整执行顺序">' +
-          '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>' +
-          '<span class="rule-step mono">' + stepNo + '</span>' +
-        '</div>' +
-        '<div class="rule-main">' +
-          '<div class="rule-head">' +
-            '<span class="chip ' + chipCls + '">' + esc(TYPE_LABEL[r.type] || r.type) + '</span>' +
-            '<span class="rule-title">' + esc(r.name || r.id) + '</span>' +
-            '<span class="mono muted" style="font-size:12px">' + esc(r.id) + '</span>' +
-            (r.disabled ? '<span class="chip soft">已停用</span>' : '<span class="chip success">启用中</span>') +
-          '</div>' +
-          '<div class="rule-meta-line mono">' + esc(condSummary(r)) + '</div>' +
-          '<div class="rule-sum-line">' + esc(actionSummary(r)) + '</div>' +
-          '<div class="rule-heat-inline">' +
-            renderMeter(ratio, tone) +
-            '<span class="mono">' + (total ? ('命中 ' + st.matched + ' · 跳过 ' + st.skipped + (st.denied ? ' · 拦截 ' + st.denied : '') + ' (' + ratio + '%)') : '尚无流量命中记录') + '</span>' +
-          '</div>' +
-          (state.editing === idx ? renderRuleEditor(r, idx) : '') +
-        '</div>' +
-        '<div class="rule-ops">' +
-          '<button type="button" class="btn ghost xs" data-act="toggle" data-i="' + idx + '">' + (r.disabled ? '启用' : '停用') + '</button>' +
-          '<button type="button" class="btn outline xs" data-act="edit" data-i="' + idx + '">' + (state.editing === idx ? '收起' : '编辑') + '</button>' +
-          '<button type="button" class="icon-btn ghost xs" data-act="up" data-i="' + idx + '" title="上移">↑</button>' +
-          '<button type="button" class="icon-btn ghost xs" data-act="down" data-i="' + idx + '" title="下移">↓</button>' +
-          '<button type="button" class="btn danger-soft xs" data-act="del" data-i="' + idx + '">删除</button>' +
-        '</div>' +
-      '</div>';
-    }).join('');
-
-    bindRuleCanvasEvents();
-  }
-
-  function renderRuleEditor(r, idx) {
-    const c = r.condition || {};
-    const fieldWrap = function (label, inner, full) {
-      return '<div class="field' + (full ? ' full' : '') + '"><label>' + esc(label) + '</label>' + inner + '</div>';
-    };
-    let h = '<div class="rule-editor">';
-    h += fieldWrap('节点名称', '<input type="text" data-f="name" value="' + esc(r.name || '') + '" />');
-    h += fieldWrap('条件：模型包含（逗号分隔）', '<input type="text" data-f="cond.models" value="' + esc((c.models || []).join(', ')) + '" placeholder="mini, claude, deepseek" />');
-    h += fieldWrap('条件：路径前缀（逗号分隔）', '<input type="text" data-f="cond.paths" value="' + esc((c.paths || []).join(', ')) + '" placeholder="/v1/chat/completions" />');
-    h += fieldWrap('条件：请求头名称', '<input type="text" data-f="cond.header_key" value="' + esc(c.header_key || '') + '" placeholder="X-Client" />');
-    h += fieldWrap('条件：请求头包含值', '<input type="text" data-f="cond.header_value" value="' + esc(c.header_value || '') + '" />');
-    h += fieldWrap('条件：请求体包含文本', '<input type="text" data-f="cond.body_contains" value="' + esc(c.body_contains || '') + '" />');
-    h += fieldWrap('高级条件表达式 (expr)', '<input type="text" class="mono" data-f="cond.expr" value="' + esc(c.expr || '') + '" placeholder="model ~ &quot;mini|flash&quot; and path == &quot;/v1/chat/completions&quot;" />', true);
-
-    if (r.type === 'inject') {
-      const profiles = (state.status && state.status.profiles) || [];
-      const opts = ['<option value="">（直接使用下方自定义注入指令）</option>']
-        .concat(profiles.map(function (p) {
-          return '<option value="' + esc(p.id) + '"' + (r.profile_id === p.id ? ' selected' : '') + '>' + esc(p.id + ' · ' + p.name) + '</option>';
-        }))
-        .join('');
-      h += fieldWrap('引用策略 Profile', '<select data-f="profile_id" style="width:100%">' + opts + '</select>');
-      h += fieldWrap('直接注入指令正文', '<textarea class="code-editor" rows="4" data-f="instruction">' + esc(r.instruction || '') + '</textarea>', true);
-    } else if (r.type === 'override') {
-      h += fieldWrap('改写目标模型 (set_model)', '<input type="text" class="mono" data-f="set_model" value="' + esc(r.set_model || '') + '" placeholder="gpt-4o" />');
-      h += fieldWrap('覆写请求参数 JSON (set_params)', '<textarea class="code-editor" rows="3" data-f="set_params" placeholder="{&quot;temperature&quot;: 0.2}">' + esc(r.set_params ? JSON.stringify(r.set_params, null, 2) : '') + '</textarea>', true);
-    } else if (r.type === 'header') {
-      h += fieldWrap('请求头名称 (header_name)', '<input type="text" class="mono" data-f="header_name" value="' + esc(r.header_name || '') + '" placeholder="X-Gateway-Tag" />');
-      h += fieldWrap('请求头值 (header_value)', '<input type="text" class="mono" data-f="header_value" value="' + esc(r.header_value || '') + '" />');
-    } else if (r.type === 'deny') {
-      h += fieldWrap('拒绝 HTTP 状态码', '<input type="number" data-f="status" value="' + esc(r.status || 403) + '" />');
-      h += fieldWrap('拒绝返回提示语', '<input type="text" data-f="message" value="' + esc(r.message || '') + '" />');
-    }
-
-    h += '<div class="full row-end">' +
-      '<button type="button" class="btn ghost sm" data-act="cancel" data-i="' + idx + '">取消</button>' +
-      '<button type="button" class="btn primary sm" data-act="apply" data-i="' + idx + '">确认节点改动</button>' +
-    '</div></div>';
-    return h;
-  }
-
-  function bindRuleCanvasEvents() {
-    const canvas = $('ruleCanvas');
-    canvas.querySelectorAll('button[data-act]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        const act = btn.dataset.act;
-        const i = parseInt(btn.dataset.i, 10);
-        if (act === 'edit') {
-          state.editing = state.editing === i ? -1 : i;
-          renderRules();
-        } else if (act === 'toggle') {
-          state.rules[i].disabled = !state.rules[i].disabled;
-          state.dirty = true;
-          renderRules();
-        } else if (act === 'del') {
-          state.rules.splice(i, 1);
-          state.editing = -1;
-          state.dirty = true;
-          renderRules();
-        } else if (act === 'up' && i > 0) {
-          moveRuleNode(i, i - 1);
-        } else if (act === 'down' && i < state.rules.length - 1) {
-          moveRuleNode(i, i + 1);
-        } else if (act === 'cancel') {
-          state.editing = -1;
-          renderRules();
-        } else if (act === 'apply') {
-          applyRuleNodeEdit(i);
-        }
-      });
-    });
-
-    canvas.querySelectorAll('.rule-node').forEach(function (node) {
-      node.addEventListener('dragstart', function (ev) {
-        if (node.getAttribute('draggable') !== 'true') return;
-        state.dragFrom = parseInt(node.dataset.i, 10);
-        node.classList.add('dragging');
-        try {
-          ev.dataTransfer.setData('text/plain', node.dataset.i);
-          ev.dataTransfer.effectAllowed = 'move';
-        } catch (e) {}
-      });
-      node.addEventListener('dragend', function () {
-        node.classList.remove('dragging');
-      });
-      node.addEventListener('dragover', function (ev) {
-        ev.preventDefault();
-        node.classList.add('drag-over');
-      });
-      node.addEventListener('dragleave', function () {
-        node.classList.remove('drag-over');
-      });
-      node.addEventListener('drop', function (ev) {
-        ev.preventDefault();
-        node.classList.remove('drag-over');
-        const to = parseInt(node.dataset.i, 10);
-        const from = state.dragFrom;
-        if (!Number.isNaN(from) && !Number.isNaN(to) && from !== to) {
-          moveRuleNode(from, to);
-        }
-      });
-    });
-  }
-
-  function moveRuleNode(from, to) {
-    const item = state.rules.splice(from, 1)[0];
-    state.rules.splice(to, 0, item);
-    state.dirty = true;
-    state.editing = -1;
-    renderRules();
-  }
-
-  function applyRuleNodeEdit(idx) {
-    const node = document.querySelector('.rule-node[data-i="' + idx + '"]');
-    if (!node) return;
-    const r = state.rules[idx];
-    const cond = {};
-    let parseFailed = false;
-
-    node.querySelectorAll('[data-f]').forEach(function (el) {
-      const f = el.dataset.f;
-      const v = el.value;
-      if (f === 'name') r.name = v.trim();
-      else if (f === 'instruction') r.instruction = v;
-      else if (f === 'profile_id') r.profile_id = v;
-      else if (f === 'set_model') r.set_model = v.trim();
-      else if (f === 'set_params') {
-        if (v.trim()) {
-          try {
-            r.set_params = JSON.parse(v);
-          } catch (e) {
-            toast('参数 JSON 格式有误', e.message, 'error');
-            parseFailed = true;
-          }
-        } else {
-          delete r.set_params;
-        }
-      } else if (f === 'header_name') r.header_name = v.trim();
-      else if (f === 'header_value') r.header_value = v;
-      else if (f === 'status') r.status = parseInt(v, 10) || 403;
-      else if (f === 'message') r.message = v;
-      else if (f === 'cond.models') { const a = splitList(v); if (a.length) cond.models = a; }
-      else if (f === 'cond.paths') { const b = splitList(v); if (b.length) cond.paths = b; }
-      else if (f === 'cond.header_key' && v.trim()) cond.header_key = v.trim();
-      else if (f === 'cond.header_value' && v.trim()) cond.header_value = v.trim();
-      else if (f === 'cond.body_contains' && v) cond.body_contains = v;
-      else if (f === 'cond.expr' && v.trim()) cond.expr = v.trim();
-    });
-
-    if (parseFailed) return;
-    if (Object.keys(cond).length) r.condition = cond;
-    else delete r.condition;
-
-    state.dirty = true;
-    state.editing = -1;
-    renderRules();
-  }
-
-  function saveRulesToServer() {
-    post('rules', { rules: state.rules }).then(function (r) {
-      if (r.ok) {
-        state.dirty = false;
-        state.editing = -1;
-        updateDirtyUI();
-        toast('规则链已保存并生效', '共 ' + state.rules.length + ' 个规则节点', 'success');
-        loadStatus();
-      } else {
-        toast('保存规则失败', errMsg(r), 'error');
-      }
-    });
-  }
-
-  function renderHeat(d) {
-    const stats = (d && d.rule_stats) || {};
-    const rules = state.rules || [];
-    const tbody = $('heatTable').querySelector('tbody');
-    if (!rules.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无规则节点</td></tr>';
-      return;
-    }
-    tbody.innerHTML = rules.map(function (r) {
-      const st = stats[r.id] || { matched: 0, skipped: 0, denied: 0, last_hit: 0 };
-      const total = st.matched + st.skipped;
-      const ratio = total ? Math.round((st.matched * 100) / total) : 0;
-      const tone = ratio >= 70 ? 'danger' : (ratio >= 30 ? 'warn' : 'ok');
-      const when = st.last_hit ? new Date(st.last_hit * 1000).toLocaleTimeString() : '—';
-      return '<tr class="hoverable">' +
-        '<td><span class="mono fg-strong">' + esc(r.id) + '</span> <span class="muted">' + esc(r.name || '') + '</span></td>' +
-        '<td class="num mono">' + st.matched + '</td>' +
-        '<td class="num mono">' + st.skipped + '</td>' +
-        '<td class="num mono">' + (st.denied ? '<span style="color:var(--danger)">' + st.denied + '</span>' : '0') + '</td>' +
-        '<td class="num mono">' + ratio + '%</td>' +
-        '<td>' + renderMeter(ratio, tone) + '</td>' +
-        '<td class="mono muted">' + esc(when) + '</td>' +
-      '</tr>';
-    }).join('');
-  }
-
-  /* ---------- Debugger, Replay, Samples & DSL ---------- */
-  function renderDryRunOutcome(d, extraHeaderHtml) {
-    let html = '<div class="trace-grid">';
-    if (extraHeaderHtml) html += extraHeaderHtml;
-    html += '<div class="trace-block">' +
-      '<div class="trace-block-label">执行裁决</div>' +
-      '<div>' + (d.denied
-        ? '<span class="chip danger">拦截请求 · HTTP ' + esc(d.status) + ' (' + esc(d.message || '') + ')</span>'
-        : '<span class="chip success">允许放行</span>') +
-      '</div></div>';
-
-    html += '<div class="form-row-2">' +
-      '<div class="trace-block"><div class="trace-block-label">命中规则节点</div><div class="mono">' + esc((d.matched || []).join(', ') || '（无）') + '</div></div>' +
-      '<div class="trace-block"><div class="trace-block-label">跳过规则节点</div><div class="mono muted">' + esc((d.skipped || []).join(', ') || '（无）') + '</div></div>' +
-    '</div>';
-
-    if (d.model || d.profile) {
-      html += '<div class="trace-block"><div class="trace-block-label">路由与策略回落</div><div class="mono">' +
-        (d.model ? '模型覆写 → ' + esc(d.model) + ' ' : '') +
-        (d.profile ? '回落策略 → ' + esc(d.profile) : '') +
-      '</div></div>';
-    }
-    if (d.instruction) {
-      html += '<div class="trace-block"><div class="trace-block-label">注入 System 指令</div><pre>' + esc(d.instruction) + '</pre></div>';
-    }
-    if (d.params && Object.keys(d.params).length) {
-      html += '<div class="trace-block"><div class="trace-block-label">覆写参数</div><pre>' + esc(JSON.stringify(d.params, null, 2)) + '</pre></div>';
-    }
-    if (d.headers && Object.keys(d.headers).length) {
-      html += '<div class="trace-block"><div class="trace-block-label">附加请求头</div><pre>' + esc(JSON.stringify(d.headers, null, 2)) + '</pre></div>';
-    }
-    if (d.preview_body) {
-      html += '<div class="trace-block"><div class="trace-block-label">最终转发请求体预览</div><pre>' + esc(d.preview_body) + '</pre></div>';
-    }
-    html += '</div>';
-    return html;
-  }
-
-  function loadReplay() {
-    api('replay').then(function (r) {
-      if (!r.ok) return;
-      const list = (r.body && r.body.entries) || [];
-      const tbody = $('replayTable').querySelector('tbody');
-      if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无被规则拦截的请求记录</td></tr>';
-        return;
-      }
-      tbody.innerHTML = list.map(function (e) {
-        return '<tr class="hoverable">' +
-          '<td class="mono muted">' + esc(new Date(e.time * 1000).toLocaleString()) + '</td>' +
-          '<td class="mono">' + esc(e.method + ' ' + e.path) + '</td>' +
-          '<td class="mono fg-strong">' + esc(e.model || '—') + '</td>' +
-          '<td><span class="chip danger mono">' + esc(e.status) + '</span></td>' +
-          '<td class="mono muted">' + esc((e.rules || []).join(', ') || '—') + '</td>' +
-          '<td class="muted">' + esc(e.message || '') + '</td>' +
-          '<td><button type="button" class="btn outline xs" data-replay="' + esc(e.id) + '">复现</button></td>' +
-        '</tr>';
-      }).join('');
-
-      tbody.querySelectorAll('[data-replay]').forEach(function (b) {
-        b.addEventListener('click', function () {
-          post('replay/test', { id: b.dataset.replay }).then(function (res) {
-            const box = $('replayOut');
-            box.hidden = false;
-            if (!res.ok) {
-              box.innerHTML = '<span style="color:var(--danger)">复现失败：' + esc(errMsg(res)) + '</span>';
-              return;
-            }
-            const d = res.body;
-            const head = '<div class="inset-head"><span class="inset-title">拦截回放复现 · ' + esc(d.entry.id + ' (' + d.entry.model + ')') + '</span><button type="button" class="btn ghost xs" onclick="document.getElementById(\'replayOut\').hidden=true">收起</button></div>';
-            box.innerHTML = head + renderDryRunOutcome(d);
-          });
-        });
-      });
-    });
-  }
-
-  function loadSamples() {
-    api('samples').then(function (r) {
-      if (!r.ok) return;
-      const body = r.body || {};
-      const list = body.entries || [];
-      $('sampleHint').textContent = '抽样频率：每 ' + (body.every || 0) + ' 次成功请求留档 1 条 · 容量上限 ' + (body.limit || 0) + ' 条（0 为关闭）';
-      const tbody = $('sampleTable').querySelector('tbody');
-      if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无成功采样记录（可在配置中设置 server.sample_every > 0 开启）</td></tr>';
-        return;
-      }
-      tbody.innerHTML = list.map(function (e) {
-        return '<tr class="hoverable">' +
-          '<td class="mono muted">' + esc(new Date(e.time * 1000).toLocaleString()) + '</td>' +
-          '<td class="mono">' + esc(e.method + ' ' + e.path) + '</td>' +
-          '<td class="mono fg-strong">' + esc(e.model || '—') + '</td>' +
-          '<td><span class="chip success mono">' + esc(e.status) + '</span></td>' +
-          '<td class="mono muted">' + esc(e.upstream || '—') + '</td>' +
-          '<td class="num mono">' + (e.latency_ms || 0) + ' ms</td>' +
-          '<td><button type="button" class="btn outline xs" data-sample="' + esc(e.id) + '">复现</button></td>' +
-        '</tr>';
-      }).join('');
-
-      tbody.querySelectorAll('[data-sample]').forEach(function (b) {
-        b.addEventListener('click', function () {
-          post('samples/test', { id: b.dataset.sample }).then(function (res) {
-            const box = $('sampleOut');
-            box.hidden = false;
-            if (!res.ok) {
-              box.innerHTML = '<span style="color:var(--danger)">复现失败：' + esc(errMsg(res)) + '</span>';
-              return;
-            }
-            const d = res.body;
-            const head = '<div class="inset-head"><span class="inset-title">采样请求复现 · ' + esc(d.entry.id + ' (' + d.entry.model + ')') + '</span><button type="button" class="btn ghost xs" onclick="document.getElementById(\'sampleOut\').hidden=true">收起</button></div>';
-            box.innerHTML = head + renderDryRunOutcome(d);
-          });
-        });
-      });
-    });
-  }
-
-  function loadDSL() {
-    api('rules/dsl').then(function (r) {
-      if (r.ok && r.body && typeof r.body.text === 'string') {
-        $('dslBox').value = r.body.text;
-      }
-    });
-  }
-
-  /* ---------- Templates & Profiles ---------- */
-  function loadTemplates() {
-    api('templates').then(function (r) {
-      if (!r.ok) return;
-      state.templates = (r.body && r.body.templates) || [];
-      renderTemplates();
-    });
-  }
-
-  function renderTemplates() {
-    const q = ($('tplSearch').value || '').toLowerCase();
-    const filtered = state.templates.filter(function (t) {
-      if (!q) return true;
-      const hay = [t.name, t.category || '', (t.tags || []).join(' ')].join(' ').toLowerCase();
-      return hay.indexOf(q) >= 0;
-    });
-
-    $('tplCount').textContent = filtered.length + '/' + state.templates.length;
-    const listEl = $('tplList');
-    if (!filtered.length) {
-      listEl.innerHTML = '<div class="empty-state">未找到匹配模板</div>';
-      return;
-    }
-
-    listEl.innerHTML = filtered.map(function (t) {
-      const isAct = state.selectedTpl && state.selectedTpl.id === t.id;
-      return '<button type="button" class="tpl-item' + (isAct ? ' active' : '') + '" data-tpl="' + esc(t.id) + '">' +
-        '<span class="tpl-item-head">' +
-          '<span>' + esc(t.name) + '</span>' +
-          (t.builtin ? '<span class="chip soft">内置</span>' : '<span class="chip cyan">自定义</span>') +
-        '</span>' +
-        '<span class="tpl-item-sub">' + esc(t.category || '通用') + (t.tags && t.tags.length ? ' · ' + esc(t.tags.join(' / ')) : '') + '</span>' +
-      '</button>';
-    }).join('');
-
-    listEl.querySelectorAll('[data-tpl]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        const found = state.templates.find(function (x) { return x.id === btn.dataset.tpl; });
-        state.selectedTpl = found || null;
-        renderTemplates();
-        renderTplEditor();
-      });
-    });
-  }
-
-  function renderTplEditor() {
-    const t = state.selectedTpl;
-    $('tplTitle').textContent = t ? t.name : '选择一个模板或直接编写';
-    $('tplMeta').textContent = t
-      ? (t.category + (t.builtin ? ' · 内置只读模板（保存将生成副本）' : ' · 自定义可编辑模板'))
-      : '编辑 System 指令正文，可保存为自定义模板或直接应用到线上策略';
-    $('tplText').value = t ? (t.instruction || '') : '';
-  }
-
-  function buildApplyTargets(profiles) {
-    const sel = $('applyTarget');
-    const mode = $('applyMode').value;
-    const list = profiles || [];
-    if (mode === 'new') {
-      sel.disabled = true;
-      sel.innerHTML = '<option value="">自动生成策略 ID</option>';
-    } else {
-      sel.disabled = false;
-      sel.innerHTML = list.length
-        ? list.map(function (p) {
-            return '<option value="' + esc(p.id) + '">' + esc(p.id + ' · ' + p.name) + '</option>';
-          }).join('')
-        : '<option value="">（当前无已有策略）</option>';
-    }
-  }
-
-  function renderProfiles(list) {
-    const tbody = $('profTable').querySelector('tbody');
-    if (!list || !list.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">尚未创建任何策略，可从上方选择模板一键应用</td></tr>';
-      return;
-    }
-    tbody.innerHTML = list.map(function (p) {
-      let preview = String(p.instruction || '').replace(/\s+/g, ' ').trim();
-      if (preview.length > 120) preview = preview.slice(0, 120) + '…';
-      return '<tr class="hoverable">' +
-        '<td class="mono fg-strong">' + esc(p.id) + '</td>' +
-        '<td>' + esc(p.name) + '</td>' +
-        '<td>' + (p.enabled ? '<span class="chip success">启用</span>' : '<span class="chip soft">停用</span>') + '</td>' +
-        '<td class="mono muted">' + esc((p.models || []).join(', ') || '全部模型') + '</td>' +
-        '<td class="muted">' + esc(preview) + '</td>' +
-      '</tr>';
-    }).join('');
-  }
-
-  /* ---------- Live Logs ---------- */
   function renderLogs() {
     const logs = state.logs || [];
     const errCount = logs.filter(function (l) { return l.level === 'ERR'; }).length;
@@ -1606,7 +1128,6 @@
     $('refreshBtn').addEventListener('click', function () {
       loadStatus();
       if (state.tab === 'channels') loadChannels();
-      if (state.tab === 'profiles') loadTemplates();
       if (state.tab === 'config') { loadSnapshots(); loadGitLog(); }
       if (state.tab === 'keys') loadKeys();
     });
@@ -1719,267 +1240,6 @@
       stopChannelLogin();
       $('loginPanel').hidden = true;
       toast('已取消网页登录会话', '', 'info');
-    });
-
-    /* Rules Subtabs & Actions */
-    document.querySelectorAll('#ruleSubtabs .seg-btn').forEach(function (btn) {
-      btn.addEventListener('click', function () { switchRuleSub(btn.dataset.subtab); });
-    });
-    document.querySelectorAll('button[data-add]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        const type = btn.dataset.add;
-        const id = 'rule-' + Date.now().toString(36);
-        const node = { id: id, name: (TYPE_LABEL[type] || type) + '节点', type: type };
-        if (type === 'inject') node.instruction = '';
-        if (type === 'deny') { node.status = 403; node.message = '请求被网关规则拦截'; }
-        if (type === 'match') node.condition = {};
-        state.rules.push(node);
-        state.dirty = true;
-        state.editing = state.rules.length - 1;
-        renderRules();
-      });
-    });
-    $('saveRulesTopBtn').addEventListener('click', saveRulesToServer);
-    $('saveRulesBannerBtn').addEventListener('click', saveRulesToServer);
-    const discardRules = function () {
-      state.dirty = false;
-      state.editing = -1;
-      state.rulesHash = '';
-      updateDirtyUI();
-      loadStatus();
-      toast('已放弃未保存改动', '已恢复为线上规则链', 'info');
-    };
-    $('reloadRulesBtn').addEventListener('click', discardRules);
-    $('resetRulesBtn').addEventListener('click', discardRules);
-
-    $('resetHeatBtn').addEventListener('click', function () {
-      confirmModal({
-        title: '清零规则命中统计',
-        description: '确定将所有规则节点的命中、跳过与拦截计数清零吗？',
-        confirmText: '确认清零',
-        danger: true
-      }).then(function (ok) {
-        if (!ok) return;
-        api('rules/stats', { method: 'DELETE' }).then(function () {
-          toast('规则统计已清零', '', 'success');
-          loadStatus();
-        });
-      });
-    });
-
-    /* Rule Debugger */
-    $('fmtTestBodyBtn').addEventListener('click', function () {
-      try {
-        const obj = JSON.parse($('testBody').value || '{}');
-        $('testBody').value = JSON.stringify(obj, null, 2);
-      } catch (e) {
-        toast('JSON 语法错误', e.message, 'error');
-      }
-    });
-    $('runTestBtn').addEventListener('click', function () {
-      let parsed;
-      try {
-        parsed = JSON.parse($('testBody').value || '{}');
-      } catch (e) {
-        toast('请求体不是合法 JSON', e.message, 'error');
-        return;
-      }
-      post('rules/test', {
-        model: $('testModel').value.trim(),
-        path: $('testPath').value,
-        body: parsed
-      }).then(function (r) {
-        const out = $('testOut');
-        out.className = '';
-        if (!r.ok) {
-          out.innerHTML = '<div class="inline-notice err">试算失败：' + esc(errMsg(r)) + '</div>';
-          return;
-        }
-        out.innerHTML = renderDryRunOutcome(r.body);
-      });
-    });
-
-    /* Replay, Samples & Batch Regression */
-    $('reloadReplayBtn').addEventListener('click', loadReplay);
-    $('clearReplayBtn').addEventListener('click', function () {
-      confirmModal({
-        title: '清空拦截回放留档',
-        description: '确定清空所有最近被规则拦截的请求记录吗？',
-        confirmText: '确认清空',
-        danger: true
-      }).then(function (ok) {
-        if (!ok) return;
-        api('replay', { method: 'DELETE' }).then(function () {
-          $('replayOut').hidden = true;
-          toast('拦截回放已清空', '', 'success');
-          loadReplay();
-        });
-      });
-    });
-    $('reloadSamplesBtn').addEventListener('click', loadSamples);
-    $('clearSamplesBtn').addEventListener('click', function () {
-      confirmModal({
-        title: '清空成功采样记录',
-        description: '确定清空当前留档的所有成功抽样请求吗？',
-        confirmText: '确认清空',
-        danger: true
-      }).then(function (ok) {
-        if (!ok) return;
-        api('samples', { method: 'DELETE' }).then(function () {
-          $('sampleOut').hidden = true;
-          toast('采样记录已清空', '', 'success');
-          loadSamples();
-        });
-      });
-    });
-    $('runBatchBtn').addEventListener('click', function () {
-      const from = $('batchFrom').value;
-      const limit = parseInt($('batchLimit').value || '100', 10) || 100;
-      post('rules/batch', { from: from, limit: limit }).then(function (r) {
-        const out = $('batchOut');
-        out.hidden = false;
-        if (!r.ok) {
-          out.innerHTML = '<div class="inline-notice err">批量回归失败：' + esc(errMsg(r)) + '</div>';
-          return;
-        }
-        const d = r.body;
-        const tallyRows = Object.keys(d.rule_matches || {}).sort().map(function (id) {
-          return '<tr><td class="mono fg-strong">' + esc(id) + '</td><td class="num mono">' + d.rule_matches[id] + '</td></tr>';
-        }).join('') || '<tr><td colspan="2" class="muted">无规则命中</td></tr>';
-
-        const itemRows = (d.items || []).slice(0, 50).map(function (it) {
-          return '<tr>' +
-            '<td class="mono muted">' + esc(it.source) + '</td>' +
-            '<td class="mono fg-strong">' + esc(it.model || '—') + '</td>' +
-            '<td class="mono">' + esc(it.path) + '</td>' +
-            '<td>' + (it.denied ? '<span class="chip danger">拦截 ' + it.status + '</span>' : '<span class="chip success">放行</span>') + '</td>' +
-            '<td class="mono muted">' + esc((it.matched || []).join(', ') || '—') + '</td>' +
-          '</tr>';
-        }).join('') || '<tr><td colspan="5" class="muted">当前样本池为空，暂无可回归请求</td></tr>';
-
-        out.innerHTML =
-          '<div class="inset-head">' +
-            '<span class="inset-title">回归汇总：总样本 ' + d.total + ' · 放行 ' + d.allowed + ' · 拦截 ' + d.denied + '</span>' +
-            '<button type="button" class="btn ghost xs" onclick="document.getElementById(\'batchOut\').hidden=true">收起</button>' +
-          '</div>' +
-          '<div class="split-2 align-start">' +
-            '<div class="table-scroll"><table class="keypool-table"><thead><tr><th>规则 ID</th><th class="num">命中次数</th></tr></thead><tbody>' + tallyRows + '</tbody></table></div>' +
-            '<div class="table-scroll"><table class="keypool-table"><thead><tr><th>来源</th><th>模型</th><th>路径</th><th>结果</th><th>命中链</th></tr></thead><tbody>' + itemRows + '</tbody></table></div>' +
-          '</div>';
-      });
-    });
-
-    /* DSL */
-    $('dslGenBtn').addEventListener('click', function () {
-      loadDSL();
-      showNotice('dslHint', '已从线上生效规则生成最新 DSL', 'ok');
-    });
-    $('dslCheckBtn').addEventListener('click', function () {
-      post('rules/dsl/preview', { text: $('dslBox').value }).then(function (r) {
-        if (r.body && r.body.ok) {
-          showNotice('dslHint', '✓ 语法校验通过，共解析出 ' + r.body.count + ' 条规则', 'ok');
-        } else {
-          showNotice('dslHint', '语法错误：' + ((r.body && r.body.error) || errMsg(r)), 'err');
-        }
-      });
-    });
-    $('dslApplyBtn').addEventListener('click', function () {
-      post('rules/dsl', { text: $('dslBox').value }).then(function (r) {
-        if (r.ok) {
-          state.dirty = false;
-          state.rulesHash = '';
-          updateDirtyUI();
-          showNotice('dslHint', '✓ 已成功解析并应用 ' + r.body.count + ' 条规则', 'ok');
-          toast('DSL 规则书已生效', '共 ' + r.body.count + ' 条规则', 'success');
-          loadStatus();
-          loadDSL();
-        } else {
-          showNotice('dslHint', '应用失败：' + errMsg(r), 'err');
-        }
-      });
-    });
-
-    /* Templates & Profiles */
-    $('tplSearch').addEventListener('input', renderTemplates);
-    $('applyMode').addEventListener('change', function () {
-      buildApplyTargets((state.status && state.status.profiles) || []);
-    });
-    $('applyTplBtn').addEventListener('click', function () {
-      if (!state.selectedTpl) {
-        toast('请先在左侧选择一个模板', '若是全新编写内容，请先点击「保存为自定义模板」', 'warn');
-        return;
-      }
-      post('templates/apply', {
-        template_id: state.selectedTpl.id,
-        profile_id: $('applyTarget').value,
-        mode: $('applyMode').value,
-        name: $('applyName').value.trim()
-      }).then(function (r) {
-        if (r.ok) {
-          toast('已应用到策略并热生效', state.selectedTpl.name, 'success');
-          loadStatus();
-        } else {
-          toast('应用模板失败', errMsg(r), 'error');
-        }
-      });
-    });
-    $('saveTplBtn').addEventListener('click', function () {
-      const text = $('tplText').value.trim();
-      if (!text) {
-        toast('指令内容不能为空', '', 'warn');
-        return;
-      }
-      const cur = state.selectedTpl;
-      const defaultName = cur ? (cur.name + (cur.builtin ? '（自定义）' : '')) : '自定义指令模板';
-      formModal({
-        title: '保存自定义模板',
-        description: '自定义模板会写入配置文件 templates 列表，随时可复用到不同策略。',
-        confirmText: '保存模板',
-        fields: [
-          { name: 'name', label: '模板名称', defaultValue: defaultName },
-          { name: 'category', label: '所属分类', defaultValue: (cur && cur.category) || '自定义' }
-        ]
-      }).then(function (vals) {
-        if (!vals) return;
-        const id = cur && !cur.builtin ? cur.id : ('tpl-' + Date.now().toString(36));
-        post('templates', {
-          id: id,
-          name: (vals.name || defaultName).trim(),
-          category: (vals.category || '自定义').trim(),
-          instruction: text,
-          tags: (cur && cur.tags) || []
-        }).then(function (r) {
-          if (r.ok) {
-            toast('自定义模板已保存', vals.name || id, 'success');
-            loadTemplates();
-          } else {
-            toast('保存模板失败', errMsg(r), 'error');
-          }
-        });
-      });
-    });
-    $('delTplBtn').addEventListener('click', function () {
-      const cur = state.selectedTpl;
-      if (!cur || cur.builtin) {
-        toast('内置模板不可删除', '仅支持删除用户自定义创建的模板', 'warn');
-        return;
-      }
-      confirmModal({
-        title: '删除自定义模板',
-        description: '确定要删除自定义模板「' + cur.name + '」吗？已应用生成的策略不受影响。',
-        confirmText: '确认删除',
-        danger: true
-      }).then(function (ok) {
-        if (!ok) return;
-        post('templates/delete', { id: cur.id }).then(function (r) {
-          if (r.ok) {
-            state.selectedTpl = null;
-            renderTplEditor();
-            loadTemplates();
-            toast('模板已删除', cur.name, 'success');
-          }
-        });
-      });
     });
 
     /* Logs */
@@ -2246,12 +1506,8 @@
   function bootstrapAll() {
     loadStatus();
     loadConfig();
-    loadTemplates();
     loadSnapshots();
     loadGitLog();
-    loadReplay();
-    loadSamples();
-    loadDSL();
     loadFederation();
     loadChannels();
     loadKeys();
@@ -2275,7 +1531,6 @@
 
   setInterval(function () {
     if (state.paused || document.hidden) return;
-    loadTemplates();
   }, 30000);
 
   document.addEventListener('visibilitychange', function () {

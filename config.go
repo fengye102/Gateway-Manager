@@ -575,56 +575,6 @@ func SampleConfig() *Config {
 			Enabled:     true,
 		},
 	}
-	c.Profiles = []Profile{
-		{
-			ID:          "default",
-			Name:        "默认策略",
-			Instruction: "你是一个严谨的工程助手。回答前先确认事实，不确定就直说不确定。",
-			Enabled:     true,
-		},
-		{
-			ID:          "coder",
-			Name:        "编码策略",
-			Models:      []string{"deepseek-chat", "coder"},
-			Instruction: "你是资深工程师。给出可直接运行的完整代码，不要省略。",
-			Enabled:     true,
-		},
-	}
-	c.Rules = []Rule{
-		{
-			ID:          "rule-tag",
-			Name:        "给所有请求打标记",
-			Type:        ruleTypeHeader,
-			Cond:        nil,
-			HeaderName:  "X-Gateway",
-			HeaderValue: "gateway-manager",
-		},
-		{
-			ID:          "rule-brief-mini",
-			Name:        "mini 模型走极简风格",
-			Type:        ruleTypeInject,
-			Cond:        &RuleCond{Models: []string{"mini"}},
-			Instruction: "答案控制在 3 句以内，先给结论。",
-		},
-		{
-			ID:       "rule-deny-empty",
-			Name:     "拦截空 messages",
-			Type:     ruleTypeDeny,
-			Disabled: true,
-			Cond:     &RuleCond{BodyContains: "\"messages\":[]"},
-			Status:   400,
-			Message:  "空 messages 请求已被规则拦截",
-		},
-	}
-	c.Templates = []ProfileTemplate{
-		{
-			ID:          "tpl-custom-mine",
-			Name:        "我自己的口吻",
-			Category:    "自定义",
-			Instruction: "用第一人称、口语化、简短句子回答；不确定就说不确定。",
-			Tags:        []string{"个人"},
-		},
-	}
 	c.Adapters = []Adapter{
 		{
 			ID:           "anthropic-style",
