@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -354,10 +355,75 @@ func newLoginSession(id string, preset ChannelPreset, profileRoot string) (*logi
 	if strings.TrimSpace(preset.LoginURL) == "" {
 		return nil, fmt.Errorf("渠道 %s 没有配置登录页地址", preset.ID)
 	}
-	profileDir := filepath.Join(profileRoot, "login-"+id)
+	if err := os.MkdirAll(profileRoot, 0o755); err != nil {
+		return nil, err
+	}
+
+	// 1) 若该 profile 已经有可用的调试实例（浏览器还开着），直接复用
+	if session, err := attachExisting(profileRoot, id, preset); err == nil && session != nil {
+		return session, nil
+	}
+
+	// 2) 正常启动；失败时换一个全新 profile 再试一次
+	attempts := []string{
+		filepath.Join(profileRoot, "login-"+id),
+		filepath.Join(profileRoot, "login-"+id+"-"+strconv.FormatInt(time.Now().UnixNano(), 36)),
+	}
+	var lastErr error
+	for i, profileDir := range attempts {
+		session, err := launchLoginBrowser(browser, profileDir, id, preset)
+		if err == nil {
+			return session, nil
+		}
+		lastErr = err
+		if i == 0 {
+			logfQuiet("复用 profile 启动失败，改用全新 profile 重试：%v", err)
+		}
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("浏览器启动失败")
+	}
+	return nil, lastErr
+}
+
+// attachExisting：profile 里已有活着的调试端口就直接接上（浏览器当前开着）
+func attachExisting(profileRoot, id string, preset ChannelPreset) (*loginSession, error) {
+	portFile := filepath.Join(profileRoot, "login-"+id, "DevToolsActivePort")
+	raw, err := os.ReadFile(portFile)
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(lines) < 2 {
+		return nil, fmt.Errorf("DevToolsActivePort 内容不完整")
+	}
+	port, err := strconvAtoi(strings.TrimSpace(lines[0]))
+	if err != nil || port <= 0 {
+		return nil, fmt.Errorf("DevToolsActivePort 端口无效")
+	}
+	wsPath := strings.TrimSpace(lines[1])
+	ws, err := dialWS(fmt.Sprintf("ws://127.0.0.1:%d%s", port, wsPath))
+	if err != nil {
+		return nil, err
+	}
+	return &loginSession{
+		ID: id, Preset: preset.ID, LoginURL: preset.LoginURL, Browser: "已运行的浏览器进程",
+		Port: port, StartedAt: time.Now(), client: &cdpClient{ws: ws},
+	}, nil
+}
+
+// launchLoginBrowser：用独立 profile 启动浏览器，并等待新的调试端口
+func launchLoginBrowser(browser, profileDir, id string, preset ChannelPreset) (*loginSession, error) {
 	if err := os.MkdirAll(profileDir, 0o755); err != nil {
 		return nil, err
 	}
+	portFile := filepath.Join(profileDir, "DevToolsActivePort")
+	// 关键：先删掉上一次残留的端口文件，否则会读到过期端口
+	_ = os.Remove(portFile)
+	for _, lock := range []string{"SingletonLock", "SingletonSocket", "lockfile"} {
+		_ = os.Remove(filepath.Join(profileDir, lock))
+	}
+
 	args := []string{
 		"--remote-debugging-port=0",
 		"--user-data-dir=" + profileDir,
@@ -365,18 +431,21 @@ func newLoginSession(id string, preset ChannelPreset, profileRoot string) (*logi
 		"--no-default-browser-check",
 		"--disable-extensions",
 		"--disable-popup-blocking",
+		"--disable-features=Translate",
 		"--new-window",
 		preset.LoginURL,
 	}
 	cmd := exec.Command(browser, args...)
+	stderr, _ := cmd.StderrPipe()
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("启动浏览器失败：%v", err)
 	}
-	portFile := filepath.Join(profileDir, "DevToolsActivePort")
+
 	var port int
 	var wsPath string
-	for i := 0; i < 120; i++ {
-		time.Sleep(100 * time.Millisecond)
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		time.Sleep(120 * time.Millisecond)
 		raw, err := os.ReadFile(portFile)
 		if err != nil {
 			continue
@@ -386,7 +455,7 @@ func newLoginSession(id string, preset ChannelPreset, profileRoot string) (*logi
 			continue
 		}
 		p, err := strconvAtoi(strings.TrimSpace(lines[0]))
-		if err != nil {
+		if err != nil || p <= 0 {
 			continue
 		}
 		port = p
@@ -394,19 +463,34 @@ func newLoginSession(id string, preset ChannelPreset, profileRoot string) (*logi
 		break
 	}
 	if port == 0 {
+		detail := ""
+		if stderr != nil {
+			buf := make([]byte, 2048)
+			_ = cmd.Process.Kill()
+			n, _ := stderr.Read(buf)
+			detail = strings.TrimSpace(string(buf[:n]))
+		}
 		_ = cmd.Process.Kill()
-		return nil, fmt.Errorf("等待浏览器调试端口超时")
+		msg := fmt.Sprintf("浏览器没有打开调试端口（20 秒超时，profile=%s）", profileDir)
+		if detail != "" {
+			msg += "；浏览器输出：" + truncateForReport(detail, 200)
+		}
+		return nil, fmt.Errorf("%s", msg)
 	}
 	ws, err := dialWS(fmt.Sprintf("ws://127.0.0.1:%d%s", port, wsPath))
 	if err != nil {
 		_ = cmd.Process.Kill()
-		return nil, fmt.Errorf("连接浏览器调试端口失败：%v", err)
+		return nil, fmt.Errorf("连接调试端口 %d 失败：%v", port, err)
 	}
-	session := &loginSession{
+	return &loginSession{
 		ID: id, Preset: preset.ID, LoginURL: preset.LoginURL, Browser: browser,
 		Port: port, StartedAt: time.Now(), client: &cdpClient{ws: ws}, proc: cmd,
-	}
-	return session, nil
+	}, nil
+}
+
+// logfQuiet：登录流程内部日志，写 stderr 即可
+func logfQuiet(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "[login] "+format+"\n", args...)
 }
 
 func strconvAtoi(s string) (int, error) {
