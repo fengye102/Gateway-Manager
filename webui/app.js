@@ -8,7 +8,8 @@
     rules: { title: '规则引擎', desc: '请求匹配、系统提示词注入、参数覆写、拦截与回归演练' },
     profiles: { title: '策略模板', desc: 'System Prompt 模板库管理与模型级自动注入策略' },
     logs: { title: '实时日志', desc: '网关内存环形日志缓冲，支持按级别与关键字实时检索' },
-    config: { title: '配置与快照', desc: '全局 JSON 配置无感热重载、自动备份快照与 Git 版本库' }
+    config: { title: '配置与快照', desc: '全局 JSON 配置无感热重载、自动备份快照与 Git 版本库' },
+    keys: { title: '接入密钥', desc: '调用网关所需的 API Key 创建、展示、复制与吊销' }
   };
 
   const TYPE_LABEL = {
@@ -50,6 +51,9 @@
     logQuery: '',
     logLevel: 'ALL',
     endpointUrl: 'http://127.0.0.1:7878/v1',
+    keys: [],
+    keyAuth: false,
+    keyReveal: {},
     lastRequests: null,
     sparkSamples: [],
     pendingReqs: 0
@@ -267,6 +271,7 @@
     });
     $('pageTitle').textContent = PAGE_META[tab].title;
     $('pageDesc').textContent = PAGE_META[tab].desc;
+    if (tab === 'keys') loadKeys();
     closeMobileDrawer();
   }
 
@@ -1603,6 +1608,7 @@
       if (state.tab === 'channels') loadChannels();
       if (state.tab === 'profiles') loadTemplates();
       if (state.tab === 'config') { loadSnapshots(); loadGitLog(); }
+      if (state.tab === 'keys') loadKeys();
     });
 
     $('themeToggleBtn').addEventListener('click', function () {
@@ -2054,6 +2060,12 @@
       });
     });
 
+    $('newKeyBtn').addEventListener('click', createAccessKey);
+    $('reloadKeysBtn').addEventListener('click', loadKeys);
+    $('copyBaseBtn').addEventListener('click', function () {
+      copyText(location.origin + '/v1', '已复制 Base URL');
+    });
+
     $('reloadGitBtn').addEventListener('click', loadGitLog);
     $('commitGitBtn').addEventListener('click', function () {
       formModal({
@@ -2077,6 +2089,160 @@
     });
   }
 
+
+  /* ---------- Access Keys (接入密钥) ---------- */
+  function copyText(text, okTitle) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        toast(okTitle || '已复制', text, 'success');
+      }).catch(function () {
+        toast('复制失败', '请手动选中文本复制', 'error');
+      });
+      return;
+    }
+    toast('当前环境不支持自动复制', text, 'warn');
+  }
+
+  function loadKeys() {
+    api('keys?reveal=1').then(function (r) {
+      if (!r.ok) {
+        if (r.status === 401) toast('需要管理密钥', '请先在右上角钥匙图标填入 X-Admin-Token', 'warn');
+        return;
+      }
+      state.keys = (r.body && r.body.keys) || [];
+      state.keyAuth = !!(r.body && r.body.auth_enabled);
+      renderKeys();
+    }).catch(function () {});
+  }
+
+  function renderKeys() {
+    const count = state.keys.length;
+    const navCount = $('navKeyCount');
+    if (navCount) navCount.textContent = String(count);
+
+    const chip = $('keyAuthChip');
+    if (chip) {
+      chip.innerHTML = state.keyAuth
+        ? '<span class="chip success">已开启鉴权</span>'
+        : '<span class="chip warning">未开启鉴权</span>';
+    }
+    const hint = $('keyAuthHint');
+    if (hint) {
+      hint.textContent = state.keyAuth
+        ? '外部调用必须携带 Authorization: Bearer <密钥> 或 x-api-key 请求头，否则返回 401'
+        : '密钥列表为空时网关不做鉴权，任何能访问本端口的客户端都可直接调用';
+    }
+
+    const tbody = $('keyTable') ? $('keyTable').querySelector('tbody') : null;
+    if (tbody) {
+      if (!count) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-state">还没有接入密钥，点击右上角「新建密钥」生成一把</td></tr>';
+      } else {
+        tbody.innerHTML = state.keys.map(function (k, i) {
+          const revealed = !!state.keyReveal[i];
+          const shown = revealed && k.key ? k.key : k.masked;
+          return '<tr class="hoverable">' +
+            '<td><code class="mono key-value">' + esc(shown) + '</code></td>' +
+            '<td class="num mono">' + (k.length || 0) + '</td>' +
+            '<td><span class="chip success">生效中</span></td>' +
+            '<td><div class="row-actions">' +
+              '<button type="button" class="btn outline xs" data-key-toggle="' + i + '">' + (revealed ? '隐藏' : '显示') + '</button>' +
+              '<button type="button" class="btn secondary xs" data-key-copy="' + i + '">复制</button>' +
+              '<button type="button" class="btn danger-soft xs" data-key-revoke="' + i + '">吊销</button>' +
+            '</div></td>' +
+          '</tr>';
+        }).join('');
+
+        tbody.querySelectorAll('[data-key-toggle]').forEach(function (b) {
+          b.addEventListener('click', function () {
+            const i = Number(b.dataset.keyToggle);
+            state.keyReveal[i] = !state.keyReveal[i];
+            renderKeys();
+          });
+        });
+        tbody.querySelectorAll('[data-key-copy]').forEach(function (b) {
+          b.addEventListener('click', function () {
+            const item = state.keys[Number(b.dataset.keyCopy)];
+            if (item && item.key) copyText(item.key, '已复制密钥');
+          });
+        });
+        tbody.querySelectorAll('[data-key-revoke]').forEach(function (b) {
+          b.addEventListener('click', function () {
+            const item = state.keys[Number(b.dataset.keyRevoke)];
+            if (item) revokeAccessKey(item);
+          });
+        });
+      }
+    }
+    renderKeySamples();
+  }
+
+  function renderKeySamples() {
+    const base = location.origin + '/v1';
+    const first = state.keys[0];
+    const sampleKey = (first && first.key) || 'sk-gw-请先创建密钥';
+
+    const elBase = $('keyBaseUrl');
+    if (elBase) elBase.textContent = base;
+    const elKey = $('keySample');
+    if (elKey) elKey.textContent = first ? first.masked : '尚未创建';
+
+    const curl = $('keyCurl');
+    if (curl) {
+      curl.textContent = [
+        'curl ' + base + '/chat/completions \\',
+        '  -H "Authorization: Bearer ' + sampleKey + '" \\',
+        '  -H "Content-Type: application/json" \\',
+        '  -d \'{"model":"deepseek-chat","messages":[{"role":"user","content":"你好"}]}\''
+      ].join('\n');
+    }
+  }
+
+  function createAccessKey() {
+    formModal({
+      title: '新建接入密钥',
+      description: '留空则自动生成 sk-gw- 开头的随机密钥；也可粘贴自定义值（至少 8 位）。创建后立即热加载生效。',
+      confirmText: '创建密钥',
+      fields: [
+        { name: 'key', label: '自定义密钥（可留空）', placeholder: '留空自动生成' }
+      ]
+    }).then(function (vals) {
+      if (!vals) return;
+      const payload = {};
+      const custom = (vals.key || '').trim();
+      if (custom) payload.key = custom;
+      post('keys', payload).then(function (r) {
+        if (r.ok) {
+          state.keyReveal = {};
+          toast('密钥已创建', (r.body && r.body.masked) || '', 'success');
+          loadKeys();
+        } else {
+          toast('创建失败', errMsg(r), 'error');
+        }
+      });
+    });
+  }
+
+  function revokeAccessKey(item) {
+    confirmModal({
+      title: '吊销接入密钥',
+      description: '吊销后使用该密钥的客户端会立刻收到 401。操作前会自动创建配置快照，可随时回滚。',
+      confirmText: '吊销',
+      danger: true
+    }).then(function (ok) {
+      if (!ok) return;
+      api('keys?key=' + encodeURIComponent(item.key || ''), { method: 'DELETE' }).then(function (r) {
+        if (r.ok) {
+          state.keyReveal = {};
+          toast('密钥已吊销', item.masked || '', 'success');
+          loadKeys();
+        } else {
+          toast('吊销失败', errMsg(r), 'error');
+        }
+      });
+    });
+  }
+
   function bootstrapAll() {
     loadStatus();
     loadConfig();
@@ -2088,6 +2254,7 @@
     loadDSL();
     loadFederation();
     loadChannels();
+    loadKeys();
   }
 
   /* Restore Token */

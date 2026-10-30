@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -77,6 +79,96 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 			}
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"logs": s.store.Logs(limit)})
+
+	case "keys":
+		current := s.store.Config()
+		switch r.Method {
+		case http.MethodGet:
+			reveal := r.URL.Query().Get("reveal") == "1"
+			items := make([]map[string]any, 0, len(current.Server.AccessKeys))
+			for i, k := range current.Server.AccessKeys {
+				item := map[string]any{"index": i, "masked": maskKey(k), "length": len(k)}
+				if reveal {
+					item["key"] = k
+				}
+				items = append(items, item)
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"keys":         items,
+				"count":        len(items),
+				"auth_enabled": len(items) > 0,
+			})
+
+		case http.MethodPost:
+			var payload struct {
+				Key string `json:"key"`
+			}
+			_ = s.readJSONBody(r, &payload)
+			key := strings.TrimSpace(payload.Key)
+			if key == "" {
+				key = "sk-gw-" + randomAccessKey()
+			}
+			if len(key) < 8 {
+				proxyError(w, http.StatusBadRequest, "密钥长度至少 8 位")
+				return
+			}
+			for _, exist := range current.Server.AccessKeys {
+				if exist == key {
+					proxyError(w, http.StatusBadRequest, "该密钥已存在")
+					return
+				}
+			}
+			next := cloneConfig(current)
+			next.Server.AccessKeys = append(append([]string{}, next.Server.AccessKeys...), key)
+			s.autoSnapshot("before-access-key-create")
+			if err := s.saveConfigAndReload(next); err != nil {
+				proxyError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			s.store.Info("已创建接入密钥：%s（共 %d 把）", maskKey(key), len(next.Server.AccessKeys))
+			writeJSON(w, http.StatusOK, map[string]any{
+				"ok": true, "key": key, "masked": maskKey(key), "count": len(next.Server.AccessKeys),
+			})
+
+		case http.MethodDelete:
+			key := strings.TrimSpace(r.URL.Query().Get("key"))
+			if key == "" {
+				var payload struct {
+					Key string `json:"key"`
+				}
+				_ = s.readJSONBody(r, &payload)
+				key = strings.TrimSpace(payload.Key)
+			}
+			if key == "" {
+				proxyError(w, http.StatusBadRequest, "缺少要吊销的 key")
+				return
+			}
+			kept := make([]string, 0, len(current.Server.AccessKeys))
+			found := false
+			for _, exist := range current.Server.AccessKeys {
+				if exist == key {
+					found = true
+					continue
+				}
+				kept = append(kept, exist)
+			}
+			if !found {
+				proxyError(w, http.StatusNotFound, "密钥不存在")
+				return
+			}
+			next := cloneConfig(current)
+			next.Server.AccessKeys = kept
+			s.autoSnapshot("before-access-key-delete")
+			if err := s.saveConfigAndReload(next); err != nil {
+				proxyError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			s.store.Info("已吊销接入密钥：%s（剩 %d 把）", maskKey(key), len(kept))
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "count": len(kept)})
+
+		default:
+			proxyError(w, http.StatusMethodNotAllowed, "GET / POST / DELETE only")
+		}
 
 	case "config":
 		if r.Method == http.MethodGet {
@@ -1097,4 +1189,12 @@ func truncateForReport(text string, limit int) string {
 		return text
 	}
 	return text[:limit] + "…"
+}
+
+func randomAccessKey() string {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano(), 16)
+	}
+	return hex.EncodeToString(buf)
 }

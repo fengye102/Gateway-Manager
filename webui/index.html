@@ -83,6 +83,11 @@
         <div class="nav-group">
           <span class="nav-group-label">系统运维</span>
           <span class="nav-group-sep" aria-hidden="true"></span>
+          <button type="button" class="nav-item" data-sidebar-item data-tab="keys" data-tooltip="接入密钥">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+            <span class="nav-label">接入密钥</span>
+            <span class="nav-count mono" id="navKeyCount">0</span>
+          </button>
           <button type="button" class="nav-item" data-sidebar-item data-tab="logs" data-tooltip="实时日志">
             <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/></svg>
             <span class="nav-label">实时日志</span>
@@ -914,6 +919,67 @@
                     <tbody></tbody>
                   </table>
                 </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ==================== 8. 接入密钥 ==================== -->
+          <section id="tab-keys" class="tab-view">
+            <div class="card flush">
+              <div class="card-head">
+                <div>
+                  <h2 class="section-title">接入密钥</h2>
+                  <p class="section-desc">客户端调用 <code class="mono">/v1/*</code> 时出示的 API Key，创建后立即热加载生效</p>
+                </div>
+                <div class="row-actions">
+                  <button type="button" class="btn outline sm" id="reloadKeysBtn">刷新</button>
+                  <button type="button" class="btn primary sm" id="newKeyBtn">新建密钥</button>
+                </div>
+              </div>
+              <div class="card-inset">
+                <div class="inset-head">
+                  <span class="inset-title">鉴权状态</span>
+                  <span id="keyAuthChip"></span>
+                </div>
+                <p class="section-desc" id="keyAuthHint">密钥列表为空时网关不做鉴权，任何能访问本端口的客户端都可直接调用</p>
+              </div>
+              <div class="table-scroll">
+                <table class="studio-table" id="keyTable">
+                  <thead>
+                    <tr>
+                      <th>密钥</th>
+                      <th class="num">长度</th>
+                      <th>状态</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <div>
+                  <h2 class="section-title">调用方式</h2>
+                  <p class="section-desc">把下面两项填进任意 OpenAI 兼容客户端即可开始调用</p>
+                </div>
+                <div class="row-actions">
+                  <button type="button" class="btn outline sm" id="copyBaseBtn">复制 Base URL</button>
+                </div>
+              </div>
+              <div class="card-body stack-sm">
+                <div class="kv-grid">
+                  <div>
+                    <div class="inset-title">Base URL</div>
+                    <code class="mono" id="keyBaseUrl">http://127.0.0.1:7878/v1</code>
+                  </div>
+                  <div>
+                    <div class="inset-title">API Key</div>
+                    <code class="mono" id="keySample">尚未创建</code>
+                  </div>
+                </div>
+                <pre class="code-sample" id="keyCurl"></pre>
               </div>
             </div>
           </section>
