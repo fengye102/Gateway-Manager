@@ -143,10 +143,17 @@ func buildRunablePrompt(messages []map[string]any) string {
 	return strings.Join(parts, "\n\n")
 }
 
-func parseRunableStream(r io.Reader, onDelta func(string)) int {
+type runableUsage struct {
+	Input  int
+	Output int
+}
+
+func (u runableUsage) Total() int { return u.Input + u.Output }
+
+func parseRunableStream(r io.Reader, onDelta func(string)) runableUsage {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	usage := 0
+	var usage runableUsage
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, ":") {
@@ -166,11 +173,19 @@ func parseRunableStream(r io.Reader, onDelta func(string)) int {
 			}
 			continue
 		}
-		if u := digFloat(obj, "usage", "totalTokens"); u > 0 {
-			usage = int(u)
+		if typ, _ := obj["type"].(string); typ == "custom" {
+			if in := digFloat(obj, "providerMetadata", "anthropic", "usage", "input_tokens"); in > 0 {
+				usage.Input = int(in)
+			}
+			if out := digFloat(obj, "providerMetadata", "anthropic", "usage", "output_tokens"); out > 0 {
+				usage.Output = int(out)
+			}
 		}
-		if u := digFloat(obj, "usage", "completionTokens"); u > 0 {
-			usage = int(u)
+		if u := digFloat(obj, "usage", "totalTokens"); u > 0 {
+			usage.Output = int(u)
+		}
+		if u := digFloat(obj, "usage", "outputTokens"); u > 0 {
+			usage.Output = int(u)
 		}
 		if txt := runableDelta(obj); txt != "" {
 			onDelta(txt)
@@ -274,7 +289,7 @@ func (s *Server) runableForward(ctx context.Context, ch Channel, preset ChannelP
 			"choices": []any{map[string]any{
 				"index": 0, "message": map[string]any{"role": "assistant", "content": sb.String()}, "finish_reason": "stop",
 			}},
-			"usage": map[string]any{"prompt_tokens": 0, "completion_tokens": usage, "total_tokens": usage},
+			"usage": map[string]any{"prompt_tokens": usage.Input, "completion_tokens": usage.Output, "total_tokens": usage.Total()},
 		}), nil
 	}
 
@@ -301,11 +316,11 @@ func (s *Server) runableForward(ctx context.Context, ch Channel, preset ChannelP
 			_ = bw.Flush()
 		})
 		writeChunk(map[string]any{}, "stop")
-		if usage > 0 {
+		if usage.Total() > 0 {
 			raw, _ := json.Marshal(map[string]any{
 				"id": id, "object": "chat.completion.chunk", "created": created, "model": model,
 				"choices": []any{},
-				"usage":   map[string]any{"prompt_tokens": 0, "completion_tokens": usage, "total_tokens": usage},
+				"usage":   map[string]any{"prompt_tokens": usage.Input, "completion_tokens": usage.Output, "total_tokens": usage.Total()},
 			})
 			_, _ = bw.WriteString("data: ")
 			_, _ = bw.Write(raw)

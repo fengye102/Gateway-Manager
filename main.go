@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-var version = "2.5.1"
+var version = "2.5.2"
 
 const usageText = `
 网关管家 gateway-manager —— 本机网关聚合 + 策略注入（Windows / Linux 通用）
@@ -52,6 +52,8 @@ func main() {
 		args = args[1:]
 	}
 	switch cmd {
+	case "probe-runable":
+		runProbeRunable(args)
 	case "probe-deepseek":
 		runProbeDeepSeek(args)
 	case "serve", "run", "start":
@@ -73,6 +75,35 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+}
+
+func runProbeRunable(args []string) {
+	fs := flag.NewFlagSet("probe-runable", flag.ExitOnError)
+	cookie := fs.String("cookie", "", "Runable 登录 cookie")
+	model := fs.String("model", "runable/runner-chat", "模型")
+	prompt := fs.String("prompt", "用一句话介绍你自己", "发送内容")
+	headBytes := fs.Int("head", 2000, "打印响应前多少字节")
+	_ = fs.Parse(args)
+
+	client := newRunableClient(strings.TrimSpace(*cookie), 300*time.Second)
+	ctx := context.Background()
+	if err := client.session(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "会话校验失败：%v\n", err)
+	}
+	resp, err := client.chat(ctx, randomUUID(), *model, *prompt)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "请求失败：%v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	fmt.Printf("HTTP %d · %d 字节 · ct=%s\n", resp.StatusCode, len(raw), resp.Header.Get("Content-Type"))
+	n := *headBytes
+	if n > len(raw) {
+		n = len(raw)
+	}
+	fmt.Println("---- 原始流 ----")
+	fmt.Println(string(raw[:n]))
 }
 
 func runProbeDeepSeek(args []string) {

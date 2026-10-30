@@ -2677,8 +2677,8 @@ func TestParseRunableStream(t *testing.T) {
 	if sb.String() != "你好世界" {
 		t.Fatalf("流解析错误: %q", sb.String())
 	}
-	if usage != 42 {
-		t.Fatalf("用量解析错误: %d", usage)
+	if usage.Total() != 42 {
+		t.Fatalf("用量解析错误: %d", usage.Total())
 	}
 	if got := looseText(`0:"hello"`); got != "hello" {
 		t.Fatalf("AI SDK 兜底解析错误: %q", got)
