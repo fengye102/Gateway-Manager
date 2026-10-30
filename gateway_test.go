@@ -2234,8 +2234,8 @@ func TestInstallerScripts(t *testing.T) {
 
 func TestChannelPresets(t *testing.T) {
 	presets := builtinChannelPresets()
-	if len(presets) != 5 {
-		t.Fatalf("内置渠道数量应为 5，实际 %d", len(presets))
+	if len(presets) != 6 {
+		t.Fatalf("内置渠道数量应为 6，实际 %d", len(presets))
 	}
 	seen := map[string]bool{}
 	openaiLike := 0
@@ -2382,7 +2382,7 @@ func TestChannelCRUD(t *testing.T) {
 	if err := json.Unmarshal(raw, &listed); err != nil {
 		t.Fatalf("渠道列表不是 JSON: %v", err)
 	}
-	if len(listed.Presets) != 5 {
+	if len(listed.Presets) != 6 {
 		t.Fatalf("预设数量不对: %d", len(listed.Presets))
 	}
 

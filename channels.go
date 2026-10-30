@@ -131,6 +131,30 @@ func builtinChannelPresets() []ChannelPreset {
 			Protocol: "openai",
 			Notes:    "已适配：cookie + /api/chat/text + AI SDK 流；modelId 原样透传，清单见 /api/rpc/public/models/getAIChatModels",
 		},
+		{
+			ID: "genspark", Name: "Genspark 网页版", Vendor: "genspark",
+			BaseURL: "https://www.genspark.ai", ChatPath: "/api/agent/ask_proxy",
+			LoginURL:     "https://www.genspark.ai/agents?type=ai_chat",
+			LoginHint:    "Google / 邮箱登录；登录后停留在 agents 对话页即可",
+			Auth:         ChannelAuth{Type: "cookie", Header: "Cookie"},
+			ExtraHeaders: map[string]string{"Origin": "https://www.genspark.ai"},
+			Models: []string{
+				"gpt-5", "gpt-5.1", "gpt-5.2", "gpt-5.4", "gpt-5.5", "gpt-5.6", "gpt-6",
+				"gpt-5-pro", "gpt-5.1-high", "gpt-5.1-low", "gpt-5.1-medium",
+				"gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.4-pro", "gpt-5.5-pro",
+				"gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-luna", "gpt-6-sol",
+				"claude-4-5-haiku", "claude-opus-4-6", "claude-opus-4-7", "claude-opus-4-8",
+				"claude-opus-5", "claude-opus-5-5", "claude-sonnet-4", "claude-sonnet-4-5",
+				"claude-sonnet-4-6", "claude-sonnet-5",
+				"gemini-2.5-flash", "gemini-3.1-flash-lite-preview", "gemini-3.1-pro-preview",
+				"gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash",
+				"GLM-5.3", "deep-seek-v4-flash", "deep-seek-v4.1-flash", "glm-5p3",
+				"glm-5p3-flash-baseten", "grok-4.5", "grok-4.6", "grok-4.7",
+				"kimi-k3", "minimax-m3", "nemotron-3-ultra",
+			},
+			Protocol: "openai",
+			Notes:    "已适配：cookie + /api/agent/ask_proxy SSE（message_field_delta 流转 OpenAI）；Go 标准库实测可过 Cloudflare；账号积分耗尽会返回 ACTION_CREDIT_EXHAUSTED",
+		},
 	}
 }
 
@@ -138,6 +162,7 @@ func builtinChannelPresets() []ChannelPreset {
 var channelAdapters = map[string]func(*Server, context.Context, Channel, ChannelPreset, []byte) (*http.Response, error){
 	"deepseek-web": (*Server).deepseekForward,
 	"runable":      (*Server).runableForward,
+	"genspark":     (*Server).gensparkForward,
 }
 
 func findPreset(id string) (ChannelPreset, bool) {
