@@ -35,9 +35,14 @@ func (s *Server) handleUI(w http.ResponseWriter, r *http.Request) {
 		proxyError(w, http.StatusNotFound, "admin ui disabled")
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	data, contentType, ok := readWebUIAsset(r.URL.Path)
+	if !ok {
+		proxyError(w, http.StatusNotFound, "ui asset not found: "+r.URL.Path)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = io.WriteString(w, adminIndexHTML)
+	_, _ = w.Write(data)
 }
 
 func (s *Server) readJSONBody(r *http.Request, dst any) error {

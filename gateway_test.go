@@ -2751,3 +2751,76 @@ func TestMaskKeyShortTokens(t *testing.T) {
 		t.Fatalf("长 token 遮罩错误: %q", got)
 	}
 }
+
+func TestWebUIEmbeddedAssets(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Upstreams = []Upstream{{
+		ID:       "up-main",
+		Name:     "主上游",
+		BaseURL:  "http://127.0.0.1:19999/v1",
+		Priority: 2,
+		Weight:   3,
+		Enabled:  true,
+	}}
+	gw := startGateway(t, cfg)
+
+	cases := []struct {
+		path    string
+		wantCT  string
+		snippet string
+	}{
+		{"/ui", "text/html", "brand-mark"},
+		{"/ui/", "text/html", "liveSparkline"},
+		{"/ui/index.html", "text/html", "toolbar--attached"},
+		{"/ui/styles.css", "text/css", "runtime-meter"},
+		{"/ui/app.js", "application/javascript", "loadStatus"},
+	}
+	for _, tc := range cases {
+		res, err := http.Get(gw.URL + tc.path)
+		if err != nil {
+			t.Fatalf("GET %s failed: %v", tc.path, err)
+		}
+		raw, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode != 200 {
+			t.Fatalf("GET %s status=%d", tc.path, res.StatusCode)
+		}
+		if !strings.Contains(res.Header.Get("Content-Type"), tc.wantCT) {
+			t.Fatalf("GET %s ct=%q want %q", tc.path, res.Header.Get("Content-Type"), tc.wantCT)
+		}
+		if !strings.Contains(string(raw), tc.snippet) {
+			t.Fatalf("GET %s missing snippet %q", tc.path, tc.snippet)
+		}
+	}
+
+	res404, err := http.Get(gw.URL + "/ui/nonexistent.js")
+	if err != nil {
+		t.Fatalf("GET nonexistent asset err: %v", err)
+	}
+	res404.Body.Close()
+	if res404.StatusCode != 404 {
+		t.Fatalf("unknown ui asset should return 404, got %d", res404.StatusCode)
+	}
+
+	stRes, err := http.Get(gw.URL + "/admin/api/status")
+	if err != nil {
+		t.Fatalf("GET status err: %v", err)
+	}
+	stRaw, _ := io.ReadAll(stRes.Body)
+	stRes.Body.Close()
+	if !strings.Contains(string(stRaw), `"priority":2`) || !strings.Contains(string(stRaw), `"base_url":"http://127.0.0.1:19999/v1"`) {
+		t.Fatalf("status upstream missing priority or base_url: %s", string(stRaw))
+	}
+
+	cfgOff := DefaultConfig()
+	cfgOff.Server.EnableAdminUI = false
+	gwOff := startGateway(t, cfgOff)
+	resOff, err := http.Get(gwOff.URL + "/ui")
+	if err != nil {
+		t.Fatalf("GET disabled ui err: %v", err)
+	}
+	resOff.Body.Close()
+	if resOff.StatusCode != 404 {
+		t.Fatalf("disabled ui should return 404, got %d", resOff.StatusCode)
+	}
+}

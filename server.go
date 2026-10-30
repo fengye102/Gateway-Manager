@@ -80,7 +80,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		path = strings.TrimSuffix(path, "/")
 	}
 	switch {
-	case path == "/ui" || path == "/ui/index.html":
+	case path == "/ui" || strings.HasPrefix(path, "/ui/"):
 		s.handleUI(w, r)
 		return
 	case strings.HasPrefix(path, "/admin/api/"):

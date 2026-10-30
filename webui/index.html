@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GATEWAY MANAGER · 控制台</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='22 22 84 84' fill='none'%3E%3Crect x='22' y='22' width='84' height='84' rx='20' fill='%23141414'/%3E%3Cpath d='M 91.4 45.6 A 32 32 0 1 0 91.4 82.4 L 91.4 66 L 68 66' stroke='%23fafafa' stroke-width='9.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M 96.9 52 A 32 32 0 0 0 91.4 45.6' stroke='%2322D3EE' stroke-width='9.5' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('gateway_manager_theme');
+        if (saved === 'light' || saved === 'dark') {
+          document.documentElement.setAttribute('data-theme', saved);
+        }
+        if (localStorage.getItem('gateway_manager_sidebar_collapsed') === '1') {
+          document.documentElement.setAttribute('data-sidebar-collapsed', '1');
+        }
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="/ui/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-top">
+        <div class="brand">
+          <svg class="brand-mark" id="brandMark" width="34" height="34" viewBox="22 22 84 84" fill="none" aria-hidden="true">
+            <path class="brand-mark__rail" pathLength="100" d="M 91.413 45.646 A 32.000 32.000 0 1 0 91.413 82.354 L 91.413 66.000 L 68.000 66.000" stroke="currentColor" stroke-width="10.4" stroke-linecap="round" stroke-linejoin="round" />
+            <path class="brand-mark__tip" pathLength="100" d="M 96.200 52.800 A 32.000 32.000 0 0 0 91.413 45.646" stroke="#22D3EE" stroke-width="10.4" stroke-linecap="round" stroke-linejoin="round" />
+            <path class="brand-mark__scan" pathLength="100" d="M 91.413 45.646 A 32.000 32.000 0 1 0 91.413 82.354 L 91.413 66.000 L 68.000 66.000" stroke="#22D3EE" stroke-width="10.4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <div class="brand-copy">
+            <div class="brand-name-row">
+              <span class="brand-name">网关管家</span>
+              <span class="chip soft mono" id="versionBadge">v2.6.0</span>
+            </div>
+            <div class="brand-sub">Gateway Control Plane</div>
+          </div>
+        </div>
+        <button type="button" class="icon-btn ghost sm sidebar-collapse-btn" id="sidebarCollapseBtn" title="收起 / 展开侧栏" aria-label="收起或展开侧栏">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><line x1="9" y1="4" x2="9" y2="20"/></svg>
+        </button>
+      </div>
+
+      <nav class="sidebar-nav" aria-label="主导航">
+        <div class="nav-group">
+          <span class="nav-group-label">工作台</span>
+          <span class="nav-group-sep" aria-hidden="true"></span>
+          <button type="button" class="nav-item sidebar-item-active" data-sidebar-item data-tab="status" data-tooltip="概览看板">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14l4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
+            <span class="nav-label">概览看板</span>
+          </button>
+          <button type="button" class="nav-item" data-sidebar-item data-tab="upstreams" data-tooltip="上游节点">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><circle cx="7" cy="7" r="1" fill="currentColor"/><circle cx="7" cy="17" r="1" fill="currentColor"/></svg>
+            <span class="nav-label">上游节点</span>
+            <span class="nav-count mono" id="navUpstreamCount">0</span>
+          </button>
+          <button type="button" class="nav-item" data-sidebar-item data-tab="channels" data-tooltip="账号渠道">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span class="nav-label">账号渠道</span>
+            <span class="nav-count mono" id="navChannelCount">0</span>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <span class="nav-group-label">治理与注入</span>
+          <span class="nav-group-sep" aria-hidden="true"></span>
+          <button type="button" class="nav-item" data-sidebar-item data-tab="rules" data-tooltip="规则引擎">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <span class="nav-label">规则引擎</span>
+            <span class="nav-count mono" id="navRuleCount">0</span>
+          </button>
+          <button type="button" class="nav-item" data-sidebar-item data-tab="profiles" data-tooltip="策略模板">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            <span class="nav-label">策略模板</span>
+            <span class="nav-count mono" id="navProfileCount">0</span>
+          </button>
+        </div>
+
+        <div class="nav-group">
+          <span class="nav-group-label">系统运维</span>
+          <span class="nav-group-sep" aria-hidden="true"></span>
+          <button type="button" class="nav-item" data-sidebar-item data-tab="logs" data-tooltip="实时日志">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/></svg>
+            <span class="nav-label">实时日志</span>
+            <span class="nav-badge danger mono" id="navLogBadge" hidden>0</span>
+          </button>
+          <button type="button" class="nav-item" data-sidebar-item data-tab="config" data-tooltip="配置与快照">
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.77 1.02 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span class="nav-label">配置与快照</span>
+          </button>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-status" id="sidebarStatusCard">
+          <div class="sidebar-status-head">
+            <div class="sidebar-status-title">
+              <span class="status-dot" id="sidebarDot" data-state="ok"></span>
+              <span id="sidebarStateText">运行中</span>
+            </div>
+            <span class="chip success mono" id="sidebarUpChip">0/0</span>
+          </div>
+          <div class="sidebar-status-meta">
+            <span>Proxy</span>
+            <span class="fg-strong" id="sidebarProxyState">online</span>
+            <span aria-hidden="true">·</span>
+            <span>健康上游</span>
+            <span class="mono fg-strong" id="sidebarUpMeta">0/0</span>
+          </div>
+        </div>
+
+        <div class="sidebar-foot-bar">
+          <span class="inflight-pill" title="当前在途并发请求">
+            <span class="status-dot" id="sidebarInflightDot"></span>
+            <span class="mono tabular fg-strong" id="sidebarInflightNum">0</span>
+          </span>
+          <button type="button" class="endpoint-mini mono" id="copyEndpointBtn" title="点击复制本机代理地址">
+            <span id="endpointText">127.0.0.1:7878/v1</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="app-header">
+        <div class="app-header-inner">
+          <button type="button" class="icon-btn ghost sm mobile-menu-btn" id="menuToggle" aria-label="打开菜单">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+
+          <div class="header-heading">
+            <span class="status-dot" id="headerStatusDot" data-state="ok"></span>
+            <h1 class="header-title" id="pageTitle">概览看板</h1>
+            <p class="header-desc" id="pageDesc">本机网关聚合、多 Key 健康选路与策略规则实时状态</p>
+          </div>
+
+          <div class="popover-anchor">
+            <div class="toolbar--attached" role="toolbar" aria-label="全局控制栏">
+              <button type="button" class="icon-btn ghost sm" id="autoRefreshBtn" title="暂停自动刷新" aria-label="切换自动刷新" aria-pressed="false">
+                <svg class="icon-pause" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                <svg class="icon-play" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+              </button>
+              <button type="button" class="icon-btn ghost sm" id="refreshBtn" title="立即刷新" aria-label="立即刷新">
+                <svg class="refresh-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              </button>
+              <button type="button" class="icon-btn ghost sm token-trigger" id="tokenBtn" title="管理密钥 (X-Admin-Token)" aria-label="配置管理密钥">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+                <span class="token-dot" id="tokenConfiguredDot" hidden></span>
+              </button>
+              <button type="button" class="icon-btn ghost sm" id="themeToggleBtn" title="切换深浅色模式" aria-label="切换深浅色模式">
+                <svg class="icon-sun" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+                <svg class="icon-moon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              </button>
+            </div>
+
+            <div class="popover" id="tokenPopover" hidden>
+              <div class="popover-head">
+                <span class="popover-title">管理接口密钥</span>
+                <span class="chip soft mono">X-Admin-Token</span>
+              </div>
+              <p class="popover-desc">若 <code class="mono">server.admin_token</code> 已启用，请在此填入密钥；保存在当前浏览器本地存储。</p>
+              <div class="input-row">
+                <input type="password" id="tokenInput" placeholder="未启用鉴权可留空" autocomplete="off" />
+                <button type="button" class="btn outline sm" id="toggleTokenVis">显示</button>
+              </div>
+              <div class="popover-foot">
+                <button type="button" class="btn ghost sm" id="clearTokenBtn">清空</button>
+                <button type="button" class="btn primary sm" id="saveTokenBtn">保存并连接</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="main-scroll">
+        <div class="page-container">
+
+          <!-- ==================== 1. 概览看板 ==================== -->
+          <section id="tab-status" class="tab-view active">
+            <!-- Slim Live Readout Strip (cli2api LiveStrip style) -->
+            <div class="live-strip">
+              <span class="status-dot" id="liveStripDot" data-state="ok"></span>
+              <span class="live-item">
+                <span>实时并发</span>
+                <strong class="mono tabular fg-strong" id="liveInflight">0</strong>
+                <span class="mini-load"><i id="liveLoadBar" style="width:0%"></i></span>
+              </span>
+              <span class="live-item">
+                <span>Key 选路</span>
+                <strong class="mono fg-strong" id="liveKeyStrategy">-</strong>
+              </span>
+              <span class="live-item">
+                <span>客户端鉴权</span>
+                <strong class="fg-strong" id="liveAuthState">-</strong>
+              </span>
+              <span class="live-item">
+                <span>近 60s 请求脉搏</span>
+                <svg class="live-sparkline" id="liveSparkline" width="116" height="22" viewBox="0 0 116 22" fill="none" aria-label="近期请求波动">
+                  <path id="liveSparkArea" d="" fill="currentColor" opacity="0.10"></path>
+                  <path id="liveSparkPath" d="M 2 18 L 114 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+              </span>
+              <span class="live-spacer"></span>
+              <a class="live-link mono" href="/metrics" target="_blank" rel="noopener">/metrics ↗</a>
+            </div>
+
+            <!-- 4 Primary Studio Metric Cards -->
+            <div class="metric-grid-4">
+              <div class="card metric-card">
+                <div class="metric-head">
+                  <span>累计代理请求</span>
+                  <span class="status-dot" id="dotRequests" data-state="ok"></span>
+                </div>
+                <div class="metric-value tabular" id="kpiRequests">0</div>
+                <div class="metric-detail mono" id="kpiUptimeFoot">运行时长 —</div>
+              </div>
+
+              <div class="card metric-card">
+                <div class="metric-head">
+                  <span>可用上游节点</span>
+                  <span class="status-dot" id="dotUpstreams" data-state="ok"></span>
+                </div>
+                <div class="metric-value tabular" id="kpiUpstreams">0 / 0</div>
+                <div class="metric-detail mono" id="kpiRoutingFoot">规则 0 · 策略 0</div>
+              </div>
+
+              <div class="card metric-card">
+                <div class="metric-head">
+                  <span>指令治理命中</span>
+                  <span class="status-dot" data-state="ok"></span>
+                </div>
+                <div class="metric-value tabular" id="kpiInjected">0</div>
+                <div class="metric-detail mono" id="kpiInjectFoot">策略 0 · 规则 0 · 透传 0</div>
+              </div>
+
+              <div class="card metric-card">
+                <div class="metric-head">
+                  <span>拦截与异常</span>
+                  <span class="status-dot" id="dotErrors" data-state="ok"></span>
+                </div>
+                <div class="metric-value tabular" id="kpiErrors">0</div>
+                <div class="metric-detail mono" id="kpiErrorFoot">拦截 0 · 上游错 0 · 鉴权错 0</div>
+              </div>
+            </div>
+
+            <!-- 3 Secondary Compact Cards -->
+            <div class="metric-grid-3">
+              <div class="card sec-metric-card">
+                <div class="sec-metric-copy">
+                  <div class="sec-metric-label">整体放行健康率</div>
+                  <div class="sec-metric-sub mono" id="secHealthDetail">无异常请求</div>
+                </div>
+                <div class="sec-metric-val tabular" id="secHealthRate">100%</div>
+              </div>
+
+              <div class="card sec-metric-card">
+                <div class="sec-metric-copy">
+                  <div class="sec-metric-label">Key 池避障跳过</div>
+                  <div class="sec-metric-sub mono" id="secKeySkipDetail">冷却或低分自动绕行</div>
+                </div>
+                <div class="sec-metric-val tabular" id="secKeySkips">0</div>
+              </div>
+
+              <div class="card sec-metric-card">
+                <div class="sec-metric-copy">
+                  <div class="sec-metric-label">状态持久化</div>
+                  <div class="sec-metric-sub mono" id="secPersistDetail">Key 健康分与命中统计</div>
+                </div>
+                <div class="sec-metric-val" id="secPersistState">关闭</div>
+              </div>
+            </div>
+
+            <!-- Governance Distribution + Retry Config -->
+            <div class="split-2">
+              <div class="card">
+                <div class="card-head">
+                  <div>
+                    <h2 class="section-title">流量治理分布</h2>
+                    <p class="section-desc">代理请求在策略注入、规则注入、原样透传、规则拦截与异常间的占比</p>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="dist-track" id="trafficDistBar"></div>
+                  <div class="dist-legend" id="trafficDistLegend"></div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-head">
+                  <div>
+                    <h2 class="section-title">重试与熔断策略</h2>
+                    <p class="section-desc">上游探活退避、半开探测及请求超时参数</p>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="kv-grid" id="retryGrid"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- A/B Experiments -->
+            <div class="card flush">
+              <div class="card-head">
+                <div>
+                  <h2 class="section-title">A/B 灰度实验</h2>
+                  <p class="section-desc">基于 <code class="mono">config.experiments</code> 按权重分臂统计错误率、平均延迟与 Token 消耗</p>
+                </div>
+              </div>
+              <div class="table-scroll">
+                <table class="studio-table" id="expTable">
+                  <thead>
+                    <tr>
+                      <th>实验标识</th>
+                      <th>分流臂 &amp; 权重</th>
+                      <th class="num">样本数</th>
+                      <th class="num">错误数</th>
+                      <th class="num">平均延迟</th>
+                      <th class="num">累计 Token</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Federation Overview -->
+            <div class="card flush">
+              <div class="card-head">
+                <div>
+                  <h2 class="section-title">多实例联邦总览</h2>
+                  <p class="section-desc" id="fedHint">并行拉取 <code class="mono">config.federation.peers</code> 中各实例的实时运行指标</p>
+                </div>
+                <button type="button" class="btn outline sm" id="reloadFedBtn">刷新联邦</button>
+              </div>
+              <div class="table-scroll">
+                <table class="studio-table" id="fedTable">
+                  <thead>
+                    <tr>
+                      <th>实例节点</th>
+                      <th>状态</th>
+                      <th>版本</th>
+                      <th>运行时长</th>
+                      <th class="num">请求量</th>
+                      <th class="num">规则拦截</th>
+                      <th class="num">上游 (异常)</th>
+                      <th class="num">规则数</th>
+                      <th class="num">延迟</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- ==================== 2. 上游节点 ==================== -->
+          <section id="tab-upstreams" class="tab-view">
+            <div class="data-toolbar">
+              <div class="toolbar-row">
+                <div class="search-field">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <input type="text" id="upstreamSearch" placeholder="搜索上游 ID、名称、端点或模型..." />
+                </div>
+                <div class="segmented" id="upstreamFilter">
+                  <button type="button" class="seg-btn active" data-filter="all">全部</button>
+                  <button type="button" class="seg-btn" data-filter="ok">健康</button>
+                  <button type="button" class="seg-btn" data-filter="issue">冷却 / 异常</button>
+                  <button type="button" class="seg-btn" data-filter="off">已停用</button>
+                </div>
+                <span class="toolbar-spacer"></span>
+                <button type="button" class="btn primary sm" id="checkNowBtn">立即健康检查</button>
+              </div>
+            </div>
+
+            <div class="card flush">
+              <div class="card-head">
+                <div>
+                  <h2 class="section-title">上游路由池与 Key 健康度</h2>
+                  <p class="section-desc">同优先级按权重分流（0 为均分）；点击行首展开图标查看该上游的 Key 池 12 段健康评分明细</p>
+                </div>
+              </div>
+              <div class="table-scroll">
+                <table class="studio-table" id="upTable">
+                  <thead>
+                    <tr>
+                      <th style="width:40px"></th>
+                      <th>上游节点</th>
+                      <th>状态</th>
+                      <th>熔断器</th>
+                      <th>优先级 / 权重</th>
+                      <th class="num">请求 / 成功 / 失败</th>
+                      <th class="num">在途并发</th>
+                      <th>延迟 &amp; 最近状态</th>
+                      <th>支持模型 &amp; 日预算</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- ==================== 3. 账号渠道 ==================== -->
+          <section id="tab-channels" class="tab-view">
+            <div class="card login-card" id="loginPanel" hidden>
+              <div class="card-head">
+                <div class="login-title-wrap">
+                  <span class="status-dot" data-state="ok"></span>
+                  <div>
+                    <h2 class="section-title" id="loginTitle">网页登录捕获中</h2>
+                    <p class="section-desc" id="loginHint">请在自动弹出的受控浏览器窗口内完成登录</p>
+                  </div>
+                </div>
+                <div class="row-actions">
+                  <button type="button" class="btn ghost sm" id="loginCancelBtn">取消会话</button>
+                  <button type="button" class="btn primary sm" id="loginSaveBtn">保存抓到的凭证</button>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="sub-surface mono" id="loginStatus">等待浏览器响应...</div>
+              </div>
+            </div>
+
+            <div class="card flush">
+              <div class="card-head">
+                <div>
+                  <h2 class="section-title">已启用账号渠道</h2>
+                  <p class="section-desc">保存后自动生成上游节点（ID 形如 <code class="mono">ch-&lt;id&gt;</code>），纳入统一健康选路</p>
+                </div>
+                <button type="button" class="btn outline sm" id="reloadChannelsBtn">刷新渠道</button>
+              </div>
+              <div class="table-scroll">
+                <table class="studio-table" id="channelTable">
+                  <thead>
+                    <tr>
+                      <th>渠道 ID</th>
+                      <th>显示名称</th>
+                      <th>所属模板</th>
+                      <th>凭证掩码</th>
+                      <th>状态</th>
+                      <th class="num">优先级</th>
+                      <th class="num">权重</th>
+                      <th>模型列表</th>
+                      <th style="width:152px">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <div class="card-inset" id="channelOut" hidden>
+                <div class="inset-head">
+                  <span class="inset-title">渠道探活结果</span>
+                  <button type="button" class="btn ghost xs" id="closeChannelOutBtn">收起</button>
+                </div>
+                <pre class="mono" id="channelOutPre"></pre>
+              </div>
+            </div>
+
+            <div class="card flush">
+              <div class="card-head">
+                <div>
+                  <h2 class="section-title">内置渠道模板库</h2>
+                  <p class="section-desc"><code class="mono">openai</code> 模板直接兼容标准协议；<code class="mono">needs_adapter</code> 模板走内置专用适配器</p>
+                </div>
+                <div class="row-actions">
+                  <div class="search-field compact">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input type="text" id="presetSearch" placeholder="筛选模板或厂商..." />
+                  </div>
+                  <div class="segmented" id="presetProtoFilter">
+                    <button type="button" class="seg-btn active" data-proto="all">全部</button>
+                    <button type="button" class="seg-btn" data-proto="openai">OpenAI</button>
+                    <button type="button" class="seg-btn" data-proto="adapter">专用适配</button>
+                  </div>
+                </div>
+              </div>
+              <div class="table-scroll">
+                <table class="studio-table" id="presetTable">
+                  <thead>
+                    <tr>
+                      <th>模板标识</th>
+                      <th>厂商</th>
+                      <th>协议</th>
+                      <th>默认端点</th>
+                      <th>说明</th>
+                      <th style="width:186px">接入操作</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- ==================== 4. 规则引擎 ==================== -->
+          <section id="tab-rules" class="tab-view">
+            <div class="subnav-row">
+              <div class="segmented" id="ruleSubtabs">
+                <button type="button" class="seg-btn active" data-subtab="canvas">
+                  <span>规则流编排</span>
+                  <span class="dirty-dot" id="ruleDirtyDot" hidden></span>
+                </button>
+                <button type="button" class="seg-btn" data-subtab="debugger">规则试算器</button>
+                <button type="button" class="seg-btn" data-subtab="traffic">回放与批量回归</button>
+                <button type="button" class="seg-btn" data-subtab="dsl">规则书 DSL</button>
+              </div>
+            </div>
+
+            <!-- 4.1 规则流编排 -->
+            <div class="subtab-pane active" id="rule-sub-canvas">
+              <div class="alert-strip warn" id="ruleDirtyBanner" hidden>
+                <div class="alert-strip-text">
+                  <span class="status-dot" data-state="warn"></span>
+                  <span>当前规则链有未保存的本地改动，点击「保存规则链」后落盘并热生效。</span>
+                </div>
+                <div class="row-actions">
+                  <button type="button" class="btn ghost sm" id="reloadRulesBtn">放弃改动</button>
+                  <button type="button" class="btn primary sm" id="saveRulesBannerBtn">保存规则链</button>
+                </div>
+              </div>
+
+              <div class="data-toolbar">
+                <div class="toolbar-row">
+                  <span class="toolbar-caption">新增节点</span>
+                  <button type="button" class="btn secondary sm" data-add="match"><span class="type-dot match"></span>条件标记</button>
+                  <button type="button" class="btn secondary sm" data-add="inject"><span class="type-dot inject"></span>注入策略</button>
+                  <button type="button" class="btn secondary sm" data-add="override"><span class="type-dot override"></span>改写参数</button>
+                  <button type="button" class="btn secondary sm" data-add="header"><span class="type-dot header"></span>附加请求头</button>
+                  <button type="button" class="btn secondary sm" data-add="deny"><span class="type-dot deny"></span>拦截请求</button>
+                  <span class="toolbar-spacer"></span>
+                  <button type="button" class="btn ghost sm" id="resetRulesBtn">还原线上</button>
+                  <button type="button" class="btn primary sm" id="saveRulesTopBtn">保存规则链</button>
+                </div>
+              </div>
+
+              <div class="rule-pipeline" id="ruleCanvas"></div>
+
+              <div class="card flush">
+                <div class="card-head">
+                  <div>
+                    <h2 class="section-title">规则命中热力分布</h2>
+                    <p class="section-desc">按规则顺序统计命中、跳过与拦截次数，直观评估每条规则的实际触发频率</p>
+                  </div>
+                  <button type="button" class="btn danger-soft sm" id="resetHeatBtn">清零统计</button>
+                </div>
+                <div class="table-scroll">
+                  <table class="studio-table" id="heatTable">
+                    <thead>
+                      <tr>
+                        <th>规则节点</th>
+                        <th class="num">命中</th>
+                        <th class="num">跳过</th>
+                        <th class="num">拦截</th>
+                        <th class="num">命中占比</th>
+                        <th style="width:160px">12 段热力计</th>
+                        <th>最近触发</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- 4.2 规则试算器 -->
+            <div class="subtab-pane" id="rule-sub-debugger">
+              <div class="split-2 align-start">
+                <div class="card">
+                  <div class="card-head">
+                    <div>
+                      <h2 class="section-title">模拟请求输入</h2>
+                      <p class="section-desc">干跑（Dry-Run）已保存的线上规则链，不消耗任何上游额度</p>
+                    </div>
+                  </div>
+                  <div class="card-body stack-md">
+                    <div class="form-row-2">
+                      <div class="field">
+                        <label for="testModel">请求模型 (model)</label>
+                        <input type="text" id="testModel" value="gpt-4o-mini" placeholder="gpt-4o-mini" />
+                      </div>
+                      <div class="field">
+                        <label for="testPath">接口路径 (path)</label>
+                        <select id="testPath">
+                          <option value="/v1/chat/completions">/v1/chat/completions</option>
+                          <option value="/v1/messages">/v1/messages</option>
+                          <option value="/v1/responses">/v1/responses</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="field">
+                      <div class="field-label-row">
+                        <label for="testBody">请求 JSON 正文</label>
+                        <button type="button" class="btn ghost xs" id="fmtTestBodyBtn">格式化 JSON</button>
+                      </div>
+                      <textarea id="testBody" class="code-editor" rows="10" spellcheck="false">{
+  "model": "gpt-4o-mini",
+  "messages": [
+    { "role": "user", "content": "hi" }
+  ]
+}</textarea>
+                    </div>
+                    <div class="row-end">
+                      <button type="button" class="btn primary sm" id="runTestBtn">执行规则试算</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="card">
+                  <div class="card-head">
+                    <div>
+                      <h2 class="section-title">试算执行报告</h2>
+                      <p class="section-desc">命中链路、参数覆写、指令注入及最终请求体预览</p>
+                    </div>
+                  </div>
+                  <div class="card-body">
+                    <div id="testOut" class="empty-state">点击左侧「执行规则试算」查看完整规则链演练结果</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 4.3 回放与批量回归 -->
+            <div class="subtab-pane" id="rule-sub-traffic">
+              <div class="card">
+                <div class="card-head">
+                  <div>
+                    <h2 class="section-title">批量历史回归验证</h2>
+                    <p class="section-desc">抽取历史采样与拦截留档重跑当前规则链，检查放行/拦截比例与规则命中分布</p>
+                  </div>
+                  <div class="row-actions">
+                    <select id="batchFrom">
+                      <option value="both">采样 + 拦截回放</option>
+                      <option value="samples">仅用成功采样</option>
+                      <option value="replay">仅用拦截回放</option>
+                    </select>
+                    <input type="number" id="batchLimit" value="100" min="1" max="500" style="width:88px" />
+                    <button type="button" class="btn primary sm" id="runBatchBtn">运行回归</button>
+                  </div>
+                </div>
+                <div class="card-inset" id="batchOut" hidden></div>
+              </div>
+
+              <div class="card flush">
+                <div class="card-head">
+                  <div>
+                    <h2 class="section-title">拦截回放留档</h2>
+                    <p class="section-desc">最近被规则拒绝的请求（敏感 Header 已脱敏），调整规则后可单条复现</p>
+                  </div>
+                  <div class="row-actions">
+                    <button type="button" class="btn outline sm" id="reloadReplayBtn">刷新</button>
+                    <button type="button" class="btn danger-soft sm" id="clearReplayBtn">清空留档</button>
+                  </div>
+                </div>
+                <div class="table-scroll">
+                  <table class="studio-table" id="replayTable">
+                    <thead>
+                      <tr>
+                        <th>拦截时间</th>
+                        <th>请求端点</th>
+                        <th>模型</th>
+                        <th>HTTP</th>
+                        <th>命中规则</th>
+                        <th>拒绝提示</th>
+                        <th style="width:84px">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+                <div class="card-inset" id="replayOut" hidden></div>
+              </div>
+
+              <div class="card flush">
+                <div class="card-head">
+                  <div>
+                    <h2 class="section-title">成功请求采样</h2>
+                    <p class="section-desc" id="sampleHint">按 <code class="mono">server.sample_every</code> 抽样保存的正向请求，可复现检验新规则是否误拦</p>
+                  </div>
+                  <div class="row-actions">
+                    <button type="button" class="btn outline sm" id="reloadSamplesBtn">刷新</button>
+                    <button type="button" class="btn danger-soft sm" id="clearSamplesBtn">清空采样</button>
+                  </div>
+                </div>
+                <div class="table-scroll">
+                  <table class="studio-table" id="sampleTable">
+                    <thead>
+                      <tr>
+                        <th>采样时间</th>
+                        <th>请求端点</th>
+                        <th>模型</th>
+                        <th>HTTP</th>
+                        <th>实际转发上游</th>
+                        <th class="num">耗时</th>
+                        <th style="width:84px">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+                <div class="card-inset" id="sampleOut" hidden></div>
+              </div>
+            </div>
+
+            <!-- 4.4 规则书 DSL -->
+            <div class="subtab-pane" id="rule-sub-dsl">
+              <div class="card">
+                <div class="card-head">
+                  <div>
+                    <h2 class="section-title">规则书 DSL 文本模式</h2>
+                    <p class="section-desc">结构化规则定义语言，与图形化编排画布实时双向同步，支持行级语法校验</p>
+                  </div>
+                  <div class="row-actions">
+                    <button type="button" class="btn outline sm" id="dslGenBtn">从当前规则生成</button>
+                    <button type="button" class="btn outline sm" id="dslCheckBtn">校验语法</button>
+                    <button type="button" class="btn primary sm" id="dslApplyBtn">解析并应用</button>
+                  </div>
+                </div>
+                <div class="card-body stack-sm">
+                  <div class="inline-notice" id="dslHint" hidden></div>
+                  <textarea id="dslBox" class="code-editor tall" spellcheck="false" placeholder="- id: r-tag&#10;  name: 打网关标记&#10;  type: header&#10;  action:&#10;    header_name: X-Gateway&#10;    header_value: gateway-manager"></textarea>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ==================== 5. 策略模板 ==================== -->
+          <section id="tab-profiles" class="tab-view">
+            <div class="profiles-layout">
+              <div class="card tpl-pane">
+                <div class="card-head compact">
+                  <h2 class="section-title">指令模板库</h2>
+                  <span class="chip soft mono" id="tplCount">0</span>
+                </div>
+                <div class="tpl-search-wrap">
+                  <div class="search-field full">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input type="text" id="tplSearch" placeholder="搜索模板名称、分类或标签..." />
+                  </div>
+                </div>
+                <div class="tpl-list" id="tplList"></div>
+              </div>
+
+              <div class="stack-md">
+                <div class="card">
+                  <div class="card-head">
+                    <div>
+                      <h2 class="section-title" id="tplTitle">选择一个模板或直接编写</h2>
+                      <p class="section-desc" id="tplMeta">编辑 System 指令正文，可保存为自定义模板或直接应用到线上策略</p>
+                    </div>
+                    <div class="row-actions">
+                      <button type="button" class="btn outline sm" id="saveTplBtn">保存为自定义模板</button>
+                      <button type="button" class="btn danger-soft sm" id="delTplBtn">删除自定义模板</button>
+                    </div>
+                  </div>
+                  <div class="card-body stack-md">
+                    <textarea id="tplText" class="code-editor" rows="8" placeholder="在此输入要自动注入到请求中的 System Prompt 指令..."></textarea>
+                    <div class="apply-row">
+                      <select id="applyMode">
+                        <option value="new">新建策略</option>
+                        <option value="overwrite">覆盖已有策略</option>
+                      </select>
+                      <select id="applyTarget"></select>
+                      <input type="text" id="applyName" placeholder="策略名称（可选）" />
+                      <button type="button" class="btn primary sm" id="applyTplBtn">应用到策略</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="card flush">
+                  <div class="card-head">
+                    <div>
+                      <h2 class="section-title">当前生效策略列表</h2>
+                      <p class="section-desc">按模型名称自动匹配或由规则链 <code class="mono">inject</code> 节点显式引用</p>
+                    </div>
+                  </div>
+                  <div class="table-scroll">
+                    <table class="studio-table" id="profTable">
+                      <thead>
+                        <tr>
+                          <th style="width:140px">策略 ID</th>
+                          <th style="width:160px">名称</th>
+                          <th style="width:86px">状态</th>
+                          <th style="width:180px">适用模型</th>
+                          <th>指令内容预览</th>
+                        </tr>
+                      </thead>
+                      <tbody></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ==================== 6. 实时日志 ==================== -->
+          <section id="tab-logs" class="tab-view">
+            <div class="data-toolbar">
+              <div class="toolbar-row">
+                <div class="search-field">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <input type="text" id="logSearch" placeholder="按关键字过滤运行日志..." />
+                </div>
+                <div class="segmented" id="logLevelFilter">
+                  <button type="button" class="seg-btn active" data-lv="ALL">全部</button>
+                  <button type="button" class="seg-btn" data-lv="INFO">INFO</button>
+                  <button type="button" class="seg-btn" data-lv="WARN">WARN</button>
+                  <button type="button" class="seg-btn" data-lv="ERR">ERR</button>
+                </div>
+                <span class="toolbar-spacer"></span>
+                <span class="toolbar-caption mono" id="logCountHint">0 条记录</span>
+                <button type="button" class="btn outline sm" id="reloadLogsBtn">刷新日志</button>
+              </div>
+            </div>
+
+            <div class="card flush">
+              <div class="table-scroll log-viewport">
+                <table class="studio-table log-table" id="logsTable">
+                  <thead>
+                    <tr>
+                      <th style="width:118px">时间</th>
+                      <th style="width:86px">级别</th>
+                      <th>事件消息</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- ==================== 7. 配置与快照 ==================== -->
+          <section id="tab-config" class="tab-view">
+            <div class="subnav-row">
+              <div class="segmented" id="configSubtabs">
+                <button type="button" class="seg-btn active" data-cfgsub="editor">JSON 配置热加载</button>
+                <button type="button" class="seg-btn" data-cfgsub="snapshots">快照回滚与 Git 历史</button>
+              </div>
+            </div>
+
+            <div class="subtab-pane active" id="cfg-sub-editor">
+              <div class="card">
+                <div class="card-head">
+                  <div>
+                    <h2 class="section-title">全局 JSON 配置编辑</h2>
+                    <p class="section-desc">保存前自动备份历史快照，落盘后立即触发无感热重载</p>
+                  </div>
+                  <div class="row-actions">
+                    <button type="button" class="btn outline sm" id="fmtCfgBtn">格式化 JSON</button>
+                    <button type="button" class="btn outline sm" id="loadCfgBtn">重新读取</button>
+                    <button type="button" class="btn primary sm" id="saveCfgBtn">保存并热加载</button>
+                  </div>
+                </div>
+                <div class="card-body stack-sm">
+                  <div class="inline-notice" id="cfgHint" hidden></div>
+                  <textarea id="cfgBox" class="code-editor xtall" spellcheck="false"></textarea>
+                </div>
+              </div>
+            </div>
+
+            <div class="subtab-pane" id="cfg-sub-snapshots">
+              <div class="card flush">
+                <div class="card-head">
+                  <div>
+                    <h2 class="section-title">配置历史快照</h2>
+                    <p class="section-desc" id="snapHint">每次保存配置、变更规则或应用模板前自动留一版，支持预览与一键回滚</p>
+                  </div>
+                  <div class="row-actions">
+                    <button type="button" class="btn outline sm" id="reloadSnapBtn">刷新</button>
+                    <button type="button" class="btn primary sm" id="newSnapBtn">新建快照</button>
+                  </div>
+                </div>
+                <div class="table-scroll">
+                  <table class="studio-table" id="snapTable">
+                    <thead>
+                      <tr>
+                        <th>快照时间</th>
+                        <th class="num">体积</th>
+                        <th class="num">上游</th>
+                        <th class="num">策略</th>
+                        <th class="num">规则</th>
+                        <th>快照名称</th>
+                        <th style="width:196px">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="card flush">
+                <div class="card-head">
+                  <div>
+                    <h2 class="section-title">快照 Git 版本历史</h2>
+                    <p class="section-desc" id="gitHint">开启 <code class="mono">server.snapshot_git</code> 后，每次快照将自动 commit 到本地仓库</p>
+                  </div>
+                  <div class="row-actions">
+                    <button type="button" class="btn outline sm" id="reloadGitBtn">刷新</button>
+                    <button type="button" class="btn secondary sm" id="commitGitBtn">手动提交</button>
+                  </div>
+                </div>
+                <div class="table-scroll">
+                  <table class="studio-table" id="gitTable">
+                    <thead>
+                      <tr>
+                        <th style="width:118px">Commit</th>
+                        <th style="width:210px">时间</th>
+                        <th>提交说明</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Studio Modal Dialog -->
+  <div class="modal-backdrop" id="modalBackdrop" hidden>
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-head">
+        <h3 class="modal-title" id="modalTitle">操作确认</h3>
+        <button type="button" class="icon-btn ghost xs" id="modalCloseBtn" aria-label="关闭">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+      <div class="modal-foot" id="modalFoot"></div>
+    </div>
+  </div>
+
+  <!-- Bottom-right Studio Toaster -->
+  <div class="toaster" id="toastStack" aria-live="polite"></div>
+
+  <script src="/ui/app.js" defer></script>
+</body>
+</html>

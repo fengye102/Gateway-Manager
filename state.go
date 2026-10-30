@@ -35,6 +35,7 @@ type Stats struct {
 type UpstreamState struct {
 	ID            string      `json:"id"`
 	Name          string      `json:"name"`
+	BaseURL       string      `json:"base_url,omitempty"`
 	Enabled       bool        `json:"enabled"`
 	Healthy       bool        `json:"healthy"`
 	Fails         int         `json:"fails"`
@@ -50,6 +51,7 @@ type UpstreamState struct {
 	LastSeen      int64       `json:"last_seen"`
 	LatencyMS     int64       `json:"latency_ms"`
 	Models        []string    `json:"models"`
+	Priority      int         `json:"priority"`
 	Weight        int         `json:"weight"`
 	Keys          []KeyView   `json:"keys"`
 	Budget        *BudgetView `json:"budget,omitempty"`
@@ -580,7 +582,9 @@ func (s *Store) SnapshotUpstreams() []UpstreamState {
 		item := UpstreamState{
 			ID:            u.ID,
 			Name:          u.Name,
+			BaseURL:       u.BaseURL,
 			Enabled:       u.Enabled,
+			Priority:      u.Priority,
 			Weight:        u.Weight,
 			Healthy:       st.healthy,
 			Fails:         st.fails,

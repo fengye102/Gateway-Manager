@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1
-FROM golang:1.21-alpine AS build
+FROM golang:1.24-alpine AS build
 WORKDIR /src
 COPY go.mod ./
 COPY *.go ./
+COPY webui ./webui
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/gateway-manager .
 
 FROM alpine:3.20
