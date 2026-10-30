@@ -586,8 +586,8 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 		s.store.Info("已打开 %s 的登录页：%s（浏览器 %s）", preset.Name, preset.LoginURL, filepath.Base(session.Browser))
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok": true, "id": id, "preset": preset.ID,
-			"login_url": preset.LoginURL, "browser": session.Browser,
-			"port": session.Port,
+			"login_url": preset.LoginURL, "login_hint": preset.LoginHint,
+			"browser": session.Browser, "port": session.Port,
 		})
 
 	case "channels/login/status":
@@ -633,10 +633,12 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 				storageDump = st
 			}
 		}
+		presetForHint, _ := findPreset(session.Preset)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"active":         true,
 			"storage":        storageDump,
 			"login_url":      session.LoginURL,
+			"login_hint":     presetForHint.LoginHint,
 			"browser":        filepath.Base(session.Browser),
 			"cookie_count":   len(cookies),
 			"cookie_names":   names,

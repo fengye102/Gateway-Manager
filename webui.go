@@ -1018,7 +1018,7 @@ function startChannelLogin(presetId){
     loginState.id = r.body.id;
     document.getElementById('loginPanel').style.display = 'block';
     document.getElementById('loginTitle').textContent = '网页登录：' + presetId;
-    document.getElementById('loginHint').textContent = '已用 ' + (r.body.browser || '浏览器') + ' 打开登录页，登录完成后这里会自动显示抓到的 cookie';
+    document.getElementById('loginHint').textContent = (r.body.login_hint ? r.body.login_hint + ' · ' : '') + '已用 ' + (r.body.browser || '浏览器') + ' 打开登录页，登录完成后这里会自动显示抓到的凭证';
     document.getElementById('loginStatus').textContent = '等待登录 ...';
     if (loginState.timer) clearInterval(loginState.timer);
     loginState.timer = setInterval(pollChannelLogin, 1500);

@@ -23,6 +23,7 @@ type ChannelPreset struct {
 	BaseURL         string            `json:"base_url"`
 	ChatPath        string            `json:"chat_path"`
 	LoginURL        string            `json:"login_url,omitempty"`
+	LoginHint       string            `json:"login_hint,omitempty"`
 	TokenStorageKey string            `json:"token_storage_key,omitempty"`
 	ModelsPath      string            `json:"models_path,omitempty"`
 	Auth            ChannelAuth       `json:"auth"`
@@ -53,8 +54,9 @@ func builtinChannelPresets() []ChannelPreset {
 		{
 			ID: "opencode-zen", Name: "OpenCode Zen（匿名免费档）", Vendor: "opencode",
 			BaseURL: "https://opencode.ai", ChatPath: "/inference/v1/chat/completions", ModelsPath: "/zen/v1/models",
-			LoginURL: "https://opencode.ai/",
-			Auth:     ChannelAuth{Type: "bearer", Header: "Authorization", Prefix: "Bearer "},
+			LoginURL:  "https://opencode.ai/",
+			LoginHint: "匿名渠道，一般无需登录；token 填 public 即可",
+			Auth:      ChannelAuth{Type: "bearer", Header: "Authorization", Prefix: "Bearer "},
 			ExtraHeaders: map[string]string{
 				"User-Agent":         "opencode/latest/2.0.29/cli",
 				"x-opencode-client":  "cli",
@@ -69,8 +71,9 @@ func builtinChannelPresets() []ChannelPreset {
 		{
 			ID: "zhipu-autoclaw", Name: "智谱 AutoGLM / autoclaw", Vendor: "zhipu",
 			BaseURL: "https://autoglm-acceleration-api.zhipuai.cn", ChatPath: "/autoclaw-proxy/proxy/autoclaw/chat/completions",
-			LoginURL: "https://agentmore.chatglm.cn/",
-			Auth:     ChannelAuth{Type: "header", Header: "X-Authorization", Prefix: "Bearer "},
+			LoginURL:  "https://agentmore.chatglm.cn/",
+			LoginHint: "智谱账号登录（AutoGLM 网页版）",
+			Auth:      ChannelAuth{Type: "header", Header: "X-Authorization", Prefix: "Bearer "},
 			ExtraHeaders: map[string]string{
 				"X-Product":     "autoclaw",
 				"X-Client-Type": "pc",
@@ -86,8 +89,9 @@ func builtinChannelPresets() []ChannelPreset {
 		{
 			ID: "workbuddy", Name: "WorkBuddy / CodeBuddy", Vendor: "workbuddy",
 			BaseURL: "https://www.workbuddy.ai", ChatPath: "/v2/chat/completions",
-			LoginURL: "https://www.workbuddy.ai/",
-			Auth:     ChannelAuth{Type: "cookie", Header: "Cookie"},
+			LoginURL:  "https://www.workbuddy.ai/",
+			LoginHint: "CodeBuddy / WorkBuddy 账号登录",
+			Auth:      ChannelAuth{Type: "cookie", Header: "Cookie"},
 			ExtraHeaders: map[string]string{
 				"X-Product":        "SaaS",
 				"X-Requested-With": "XMLHttpRequest",
@@ -99,8 +103,9 @@ func builtinChannelPresets() []ChannelPreset {
 		{
 			ID: "raccoon", Name: "商汤 小浣熊", Vendor: "raccoon",
 			BaseURL: "https://xiaohuanxiong.com", ChatPath: "/api/web/llm/v2/chat/completions",
-			LoginURL: "https://xiaohuanxiong.com/",
-			Auth:     ChannelAuth{Type: "header", Header: "X-Auth-Token", Prefix: ""},
+			LoginURL:  "https://xiaohuanxiong.com/",
+			LoginHint: "商汤小浣熊账号登录",
+			Auth:      ChannelAuth{Type: "header", Header: "X-Auth-Token", Prefix: ""},
 			ExtraHeaders: map[string]string{
 				"X-Client-Platform": "desktop-windows",
 				"X-Client-Version":  "v1.0.38",
@@ -111,15 +116,17 @@ func builtinChannelPresets() []ChannelPreset {
 		{
 			ID: "xunfei-loomy", Name: "科大讯飞 Loomy", Vendor: "xunfei",
 			BaseURL: "https://loomyad.xunfei.cn", ChatPath: "/api/v1/chat/completions",
-			LoginURL: "https://loomyad.xunfei.cn/",
-			Auth:     ChannelAuth{Type: "query", QueryKey: "token"},
-			Protocol: "openai",
-			Notes:    "OpenAI 兼容；token 走查询参数",
+			LoginURL:  "https://loomyad.xunfei.cn/",
+			LoginHint: "讯飞账号登录",
+			Auth:      ChannelAuth{Type: "query", QueryKey: "token"},
+			Protocol:  "openai",
+			Notes:     "OpenAI 兼容；token 走查询参数",
 		},
 		{
 			ID: "deepseek-web", Name: "DeepSeek 网页版", Vendor: "deepseek",
 			BaseURL: "https://chat.deepseek.com", ChatPath: "/api/v0/chat/completion",
 			LoginURL:        "https://chat.deepseek.com/sign_in",
+			LoginHint:       "手机号 / 邮箱 / 微信登录；登录成功后页面会跳到对话页",
 			ModelsPath:      "/api/v0/users/current",
 			TokenStorageKey: "localStorage.userToken",
 			Auth:            ChannelAuth{Type: "bearer", Header: "Authorization", Prefix: "Bearer "},
@@ -135,7 +142,8 @@ func builtinChannelPresets() []ChannelPreset {
 		{
 			ID: "tabbit", Name: "Tabbit", Vendor: "tabbit",
 			BaseURL: "https://web.tabbit.com", ChatPath: "/api/v3/chat/runs",
-			LoginURL:     "https://web.tabbit.com/",
+			LoginURL:     "https://web.tabbit.com/login",
+			LoginHint:    "打开后若停在首页，点右上角「Sign in / 登录」；支持 Google / 邮箱登录",
 			Auth:         ChannelAuth{Type: "cookie", Header: "Cookie"},
 			ExtraHeaders: map[string]string{"x-tabbit-client-platform": "android"},
 			Protocol:     "needs_adapter",
@@ -144,23 +152,26 @@ func builtinChannelPresets() []ChannelPreset {
 		{
 			ID: "catpaw", Name: "美团 CatPaw", Vendor: "catpaw",
 			BaseURL: "https://ai.catpaw.meituan.com", ChatPath: "/api/chat",
-			LoginURL: "https://ai.catpaw.meituan.com/",
-			Auth:     ChannelAuth{Type: "cookie", Header: "Cookie"},
-			Protocol: "needs_adapter",
-			Notes:    "私有协议（SSE 自定义字段），尚未适配",
+			LoginURL:  "https://ai.catpaw.meituan.com/",
+			LoginHint: "美团账号登录；该渠道是 OAuth 轮询式登录，可能需要二次授权",
+			Auth:      ChannelAuth{Type: "cookie", Header: "Cookie"},
+			Protocol:  "needs_adapter",
+			Notes:     "私有协议（SSE 自定义字段），尚未适配",
 		},
 		{
 			ID: "dangbei", Name: "当贝 AI", Vendor: "dangbei",
 			BaseURL: "https://ai-api.dangbei.net", ChatPath: "/ai-search",
-			LoginURL: "https://ai.dangbei.com/chat",
-			Auth:     ChannelAuth{Type: "header", Header: "Authorization", Prefix: "Bearer "},
-			Protocol: "needs_adapter",
-			Notes:    "私有协议，尚未适配",
+			LoginURL:  "https://ai.dangbei.com/chat",
+			LoginHint: "手机号 + 验证码登录",
+			Auth:      ChannelAuth{Type: "header", Header: "Authorization", Prefix: "Bearer "},
+			Protocol:  "needs_adapter",
+			Notes:     "私有协议，尚未适配",
 		},
 		{
 			ID: "runable", Name: "Runable", Vendor: "runable",
 			BaseURL: "https://api.runable.com", ChatPath: "/api/chat/text",
-			LoginURL:     "https://runable.com/",
+			LoginURL:     "https://runable.com/?refer_code=KL5ASK",
+			LoginHint:    "Google 邮箱或 Magic Link 登录",
 			Auth:         ChannelAuth{Type: "bearer", Header: "Authorization", Prefix: "Bearer "},
 			ExtraHeaders: map[string]string{"x-runable-device": "dweb"},
 			Protocol:     "needs_adapter",
@@ -169,18 +180,20 @@ func builtinChannelPresets() []ChannelPreset {
 		{
 			ID: "meoo", Name: "阿里 秒悟 Meoo", Vendor: "meoo",
 			BaseURL: "https://meoo.com", ChatPath: "/api/v1/agent/models",
-			LoginURL: "https://meoo.com/",
-			Auth:     ChannelAuth{Type: "cookie", Header: "Cookie"},
-			Protocol: "needs_adapter",
-			Notes:    "私有协议（会话 + 轮询），尚未适配",
+			LoginURL:  "https://meoo.com/?inviteCode=RMYr87BQ",
+			LoginHint: "用阿里账号登录；登录后页面会停在对话页",
+			Auth:      ChannelAuth{Type: "cookie", Header: "Cookie"},
+			Protocol:  "needs_adapter",
+			Notes:     "私有协议（会话 + 轮询），尚未适配",
 		},
 		{
 			ID: "wenxin", Name: "百度 文心", Vendor: "baidu",
 			BaseURL: "https://chat.baidu.com", ChatPath: "/aichat/api/conversation",
-			LoginURL: "https://wappass.baidu.com/passport/?login&u=https%3A%2F%2Fwenxin.baidu.com%2F",
-			Auth:     ChannelAuth{Type: "cookie", Header: "Cookie"},
-			Protocol: "needs_adapter",
-			Notes:    "私有协议，尚未适配",
+			LoginURL:  "https://wappass.baidu.com/passport/?login&u=https%3A%2F%2Fwenxin.baidu.com%2F",
+			LoginHint: "百度账号登录，登录成功会自动跳回文心",
+			Auth:      ChannelAuth{Type: "cookie", Header: "Cookie"},
+			Protocol:  "needs_adapter",
+			Notes:     "私有协议，尚未适配",
 		},
 	}
 }
