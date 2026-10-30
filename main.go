@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-var version = "2.5.3"
+var version = "2.6.0"
 
 const usageText = `
 网关管家 gateway-manager —— 本机网关聚合 + 策略注入（Windows / Linux 通用）

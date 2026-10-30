@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -211,6 +212,9 @@ func (p *keyPool) snapshot() []KeyView {
 func maskKey(k string) string {
 	if k == "" {
 		return "(无)"
+	}
+	if len(k) <= 2 {
+		return strings.Repeat("*", len(k))
 	}
 	if len(k) <= 8 {
 		return k[:2] + "…" + k[len(k)-2:]

@@ -332,6 +332,10 @@ func normalizeConfig(c *Config) {
 	}
 	for i := range c.Channels {
 		ch := &c.Channels[i]
+		if _, ok := findPreset(ch.Preset); !ok {
+			// 已下线渠道模板：自动停用，避免老配置把网关卡死
+			ch.Enabled = false
+		}
 		if ch.ID == "" {
 			ch.ID = "channel-" + fmt.Sprint(i+1)
 		}
@@ -481,9 +485,8 @@ func ValidateConfig(c *Config) error {
 			return fmt.Errorf("channels[%d]: id %q 重复", i, ch.ID)
 		}
 		seenChannel[ch.ID] = true
-		if _, ok := findPreset(ch.Preset); !ok {
-			return fmt.Errorf("channels[%d] (%s): 未知渠道模板 %q", i, ch.ID, ch.Preset)
-		}
+		// 已下线的渠道模板不再阻断启动：normalize 阶段会自动停用
+
 	}
 	for i, exp := range c.Experiments {
 		if len(exp.Arms) < 2 {

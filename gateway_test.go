@@ -2234,8 +2234,8 @@ func TestInstallerScripts(t *testing.T) {
 
 func TestChannelPresets(t *testing.T) {
 	presets := builtinChannelPresets()
-	if len(presets) < 10 {
-		t.Fatalf("内置渠道太少: %d", len(presets))
+	if len(presets) != 5 {
+		t.Fatalf("内置渠道数量应为 5，实际 %d", len(presets))
 	}
 	seen := map[string]bool{}
 	openaiLike := 0
@@ -2261,10 +2261,10 @@ func TestChannelPresets(t *testing.T) {
 			t.Fatalf("渠道 %s 缺少认证方式", p.ID)
 		}
 	}
-	if openaiLike < 4 {
+	if openaiLike < 5 {
 		t.Fatalf("可直接用的渠道太少: %d", openaiLike)
 	}
-	for _, want := range []string{"opencode-zen", "zhipu-autoclaw", "workbuddy", "raccoon", "deepseek-web"} {
+	for _, want := range []string{"opencode-zen", "zhipu-autoclaw", "xunfei-loomy", "deepseek-web", "runable"} {
 		if _, ok := findPreset(want); !ok {
 			t.Fatalf("缺少渠道模板 %s", want)
 		}
@@ -2382,7 +2382,7 @@ func TestChannelCRUD(t *testing.T) {
 	if err := json.Unmarshal(raw, &listed); err != nil {
 		t.Fatalf("渠道列表不是 JSON: %v", err)
 	}
-	if len(listed.Presets) < 10 {
+	if len(listed.Presets) != 5 {
 		t.Fatalf("预设数量不对: %d", len(listed.Presets))
 	}
 
@@ -2532,7 +2532,7 @@ func TestCookieHelpers(t *testing.T) {
 	if token != "sessionid=abc; cf_clearance=xyz" {
 		t.Fatalf("cookie 拼接错误: %q", token)
 	}
-	if hostOf("http://www.workbuddy.ai/x") != "workbuddy.ai" {
+	if hostOf("http://www.zhipuai.cn/x") != "zhipuai.cn" {
 		t.Fatalf("hostOf 未去掉 www")
 	}
 }
@@ -2731,5 +2731,23 @@ func TestRunableChannelRouting(t *testing.T) {
 	}
 	if !strings.Contains(gotBody, `"trigger":"submit-message"`) {
 		t.Fatalf("请求体结构不对: %s", gotBody)
+	}
+}
+
+func TestMaskKeyShortTokens(t *testing.T) {
+	cases := map[string]string{
+		"":        "(无)",
+		"a":       "*",
+		"ab":      "**",
+		"abc":     "ab…bc",
+		"tk-demo": "tk…mo",
+	}
+	for in, want := range cases {
+		if got := maskKey(in); got != want {
+			t.Fatalf("maskKey(%q)=%q want %q", in, got, want)
+		}
+	}
+	if got := maskKey("sk-very-secret-token"); got != "sk-v…oken" {
+		t.Fatalf("长 token 遮罩错误: %q", got)
 	}
 }

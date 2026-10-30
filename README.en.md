@@ -115,12 +115,9 @@ original app's network layer). Fill in a credential and it becomes an upstream (
 | --- | --- | --- | --- |
 | `opencode-zen` | OpenCode Zen (anonymous) | Bearer `public` | ✅ OpenAI-compatible |
 | `zhipu-autoclaw` | Zhipu AutoGLM | `X-Authorization: Bearer` | ✅ OpenAI-compatible |
-| `workbuddy` | WorkBuddy / CodeBuddy | Cookie | ✅ OpenAI-compatible |
-| `raccoon` | SenseTime Raccoon | `X-Auth-Token` | ✅ OpenAI-compatible |
 | `xunfei-loomy` | iFlytek Loomy | query `token` | ✅ OpenAI-compatible |
 | `deepseek-web` | DeepSeek web | Bearer + cookie | ✅ adapted (DeepSeekHashV1 PoW + patch stream) |
 | `runable` | Runable | Cookie | ✅ adapted (AI SDK stream) |
-| `tabbit`, `catpaw`, `dangbei`, `meoo`, `wenxin` | — | — | ⚠️ endpoint registered, protocol adapter pending |
 
 ### Web login (recommended)
 

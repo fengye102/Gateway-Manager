@@ -642,18 +642,11 @@ docker compose up -d     # gateway-manager + Prometheus + Grafana 一起起来
 
 | 模板 id | 名称 | 端点 | 认证 | 状态 |
 | --- | --- | --- | --- | --- |
-| `opencode-zen` | OpenCode Zen（匿名免费档） | `opencode.ai/inference/v1/chat/completions` | Bearer（填 `public`） | ✅ openai |
-| `zhipu-autoclaw` | 智谱 AutoGLM / autoclaw | `autoglm-acceleration-api.zhipuai.cn/autoclaw-proxy/proxy/autoclaw/chat/completions` | `X-Authorization: Bearer` | ✅ openai |
-| `workbuddy` | WorkBuddy / CodeBuddy | `www.workbuddy.ai/v2/chat/completions` | Cookie | ✅ openai |
-| `raccoon` | 商汤 小浣熊 | `xiaohuanxiong.com/api/web/llm/v2/chat/completions` | `X-Auth-Token` | ✅ openai |
-| `xunfei-loomy` | 科大讯飞 Loomy | `loomyad.xunfei.cn/api/v1/chat/completions` | 查询参数 `token` | ✅ openai |
+| `opencode-zen` | OpenCode Zen（匿名免费档） | `opencode.ai/inference/v1/chat/completions` | Bearer（填 `public`） | ✅ 可直接用 |
+| `zhipu-autoclaw` | 智谱 AutoGLM / autoclaw | `autoglm-acceleration-api.zhipuai.cn/autoclaw-proxy/proxy/autoclaw/chat/completions` | `X-Authorization: Bearer` | ✅ 可直接用 |
+| `xunfei-loomy` | 科大讯飞 Loomy | `loomyad.xunfei.cn/api/v1/chat/completions` | 查询参数 `token` | ✅ 可直接用 |
 | `deepseek-web` | DeepSeek 网页版 | `chat.deepseek.com/api/v0/chat/completion` | Bearer + cookie | ✅ 已适配（PoW + patch 流） |
-| `tabbit` | Tabbit | `web.tabbit.com/api/v3/chat/runs` | Cookie + 签名头 | ⚠️ 待适配 |
-| `catpaw` | 美团 CatPaw | `ai.catpaw.meituan.com` | Cookie | ⚠️ 待适配 |
-| `dangbei` | 当贝 AI | `ai-api.dangbei.net/ai-search` | Bearer | ⚠️ 待适配 |
 | `runable` | Runable | `api.runable.com/api/chat/text` | Cookie | ✅ 已适配（AI SDK 流） |
-| `meoo` | 阿里 秒悟 Meoo | `meoo.com/api/v1/...` | Cookie | ⚠️ 待适配 |
-| `wenxin` | 百度 文心 | `chat.baidu.com/aichat/api/conversation` | Cookie | ⚠️ 待适配 |
 
 ### 网页登录（推荐）
 
@@ -714,7 +707,7 @@ DeepSeek 网页版不是 OpenAI 形状，三步都补上了：
 
 ### 网页登录打不开怎么办
 
-v2.5.3 起已经处理了最常见的坑：
+v2.6.0 起已经处理了最常见的坑：
 
 | 现象 | 原因 / 修法 |
 | --- | --- |
@@ -727,7 +720,7 @@ v2.5.3 起已经处理了最常见的坑：
 
 - 凭证存在本地 `config.json`（**不会**上传到任何地方）；`/admin/api/channels` 只返回遮罩值（`tk…mo`）
 - 不内置自动登录 / 抓 cookie：凭证需要你自己从合法持有的账号里取
-- 标 ⚠️ 的模板只做了地址与请求头登记，请求/响应协议仍需适配（Tabbit 需要签名头，其余需要各自私有响应格式）
+- 目前只内置 5 家渠道：OpenCode Zen、智谱 AutoGLM、讯飞 Loomy、DeepSeek 网页版、Runable；其余渠道已下线（旧配置里若残留会自动停用，不会阻断启动）
 - 接非标准协议时也可以用 `adapters`（路径 / 认证头 / 额外头）或自己在 `channels.go` 加一个 adapter 函数
 
 ## 31. 配置快照与回滚（新）
