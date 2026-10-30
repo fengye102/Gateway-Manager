@@ -114,7 +114,7 @@ func builtinChannelPresets() []ChannelPreset {
 			},
 			Models:   []string{"deepseek-chat", "deepseek-reasoner"},
 			Protocol: "openai",
-			Notes:    "已适配：DeepSeekHashV1 PoW（23 轮 Keccak）+ <｜User｜> prompt + patch 流转 OpenAI",
+			Notes:    "已适配：DeepSeekHashV1 PoW（23 轮 Keccak）+ <｜User｜> prompt + patch 流转 OpenAI；注意：网页 userToken 寿命很短（实测约 25-30 分钟即失效）且上游会风控封号，实测账号已被封禁，仅作兼容保留，不建议正式使用",
 		},
 		{
 			ID: "runable", Name: "Runable", Vendor: "runable",
