@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -279,6 +280,7 @@ type loginSession struct {
 	client    *cdpClient
 	proc      *exec.Cmd
 	mu        sync.Mutex
+	headless  bool // 无显示器环境下以 headless 模式运行，画面由控制台远端呈现
 }
 
 var findBrowserFunc = findChromiumBrowser
@@ -424,17 +426,13 @@ func launchLoginBrowser(browser, profileDir, id string, preset ChannelPreset) (*
 		_ = os.Remove(filepath.Join(profileDir, lock))
 	}
 
-	args := []string{
-		"--remote-debugging-port=0",
-		"--user-data-dir=" + profileDir,
-		"--no-first-run",
-		"--no-default-browser-check",
-		"--disable-extensions",
-		"--disable-popup-blocking",
-		"--disable-features=Translate",
-		"--new-window",
-		preset.LoginURL,
+	headless := shouldRunHeadless()
+	startURL := preset.LoginURL
+	if headless {
+		// 无显示器环境先开 about:blank，等 UA 伪装完成后再导航到登录页
+		startURL = "about:blank"
 	}
+	args := buildLoginBrowserArgs(profileDir, startURL, headless, os.Geteuid() == 0)
 	cmd := exec.Command(browser, args...)
 	stderr, _ := cmd.StderrPipe()
 	if err := cmd.Start(); err != nil {
@@ -482,10 +480,17 @@ func launchLoginBrowser(browser, profileDir, id string, preset ChannelPreset) (*
 		_ = cmd.Process.Kill()
 		return nil, fmt.Errorf("连接调试端口 %d 失败：%v", port, err)
 	}
-	return &loginSession{
+	session := &loginSession{
 		ID: id, Preset: preset.ID, LoginURL: preset.LoginURL, Browser: browser,
 		Port: port, StartedAt: time.Now(), client: &cdpClient{ws: ws}, proc: cmd,
-	}, nil
+		headless: headless,
+	}
+	if headless {
+		// 无显示器环境：about:blank 启动 → 伪装 UA → 再导航到登录页，
+		// 保证首屏导航就带正常浏览器 UA（部分站点会拦 HeadlessChrome）
+		session.prepareHeadlessPage()
+	}
+	return session, nil
 }
 
 // logfQuiet：登录流程内部日志，写 stderr 即可
@@ -637,6 +642,262 @@ func cookiesToToken(cookies []cdpCookie) string {
 		parts = append(parts, c.Name+"="+c.Value)
 	}
 	return strings.Join(parts, "; ")
+}
+
+// ---------- headless 远端登录支持 ----------
+
+// shouldRunHeadless：服务器上通常没有显示器；检测不到图形会话就用 headless 模式跑，
+// 画面由控制台「远端登录画面」轮询截图呈现
+func shouldRunHeadless() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	return os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == ""
+}
+
+// buildLoginBrowserArgs：构造受控浏览器启动参数
+func buildLoginBrowserArgs(profileDir, startURL string, headless, isRoot bool) []string {
+	args := []string{
+		"--remote-debugging-port=0",
+		"--user-data-dir=" + profileDir,
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--disable-extensions",
+		"--disable-popup-blocking",
+		"--disable-features=Translate",
+		"--disable-dev-shm-usage",
+		"--new-window",
+		startURL,
+	}
+	if isRoot {
+		// Linux 下以 root 运行时 Chrome/Chromium 拒绝启用沙箱，必须显式关闭
+		args = append(args, "--no-sandbox")
+	}
+	if headless {
+		args = append(args, "--headless=new", "--window-size=1180,860", "--hide-scrollbars", "--mute-audio", "--disable-gpu")
+	}
+	return args
+}
+
+// profileRootDefault：登录 profile 的存放位置。
+// snap 打包的 Chromium 挂了私有 /tmp，且 AppArmor 不放行 root 家目录的普通路径，
+// 宿主侧永远读不到它写进 /tmp 或 /root 的 DevToolsActivePort —— 必须放进 snap
+// 自身可写的数据目录（$HOME/snap/chromium/common），该目录对宿主进程同样可见。
+// 注意 systemd 服务默认没有 $HOME，需经 /etc/passwd 兜底取 home。
+func profileRootDefault() string {
+	if runtime.GOOS == "linux" {
+		home := ""
+		if h, err := os.UserHomeDir(); err == nil && h != "" {
+			home = h
+		} else if u, err := user.Current(); err == nil && u.HomeDir != "" {
+			home = u.HomeDir
+		}
+		if home != "" {
+			snapCommon := filepath.Join(home, "snap", "chromium", "common")
+			if err := os.MkdirAll(snapCommon, 0o755); err == nil {
+				return filepath.Join(snapCommon, "gateway-manager-login")
+			}
+		}
+	}
+	return filepath.Join(os.TempDir(), "gateway-manager-login")
+}
+
+// prepareHeadlessPage：headless 启动后伪装 UA 并导航到真正的登录页
+func (s *loginSession) prepareHeadlessPage() {
+	if s.closed || s.client == nil {
+		return
+	}
+	sid, detach, err := s.attachPageSession()
+	if err != nil {
+		logfQuiet("headless 初始化失败：%v", err)
+		return
+	}
+	defer detach()
+	var ver struct {
+		UserAgent string `json:"userAgent"`
+	}
+	if err := s.client.call("Browser.getVersion", nil, &ver, 6*time.Second); err == nil {
+		if ua := strings.ReplaceAll(ver.UserAgent, "HeadlessChrome", "Chrome"); ua != "" && ua != ver.UserAgent {
+			_ = s.client.callSession(sid, "Emulation.setUserAgentOverride", map[string]any{"userAgent": ua}, nil, 6*time.Second)
+		}
+	}
+	_ = s.client.callSession(sid, "Page.navigate", map[string]any{"url": s.LoginURL}, nil, 12*time.Second)
+	time.Sleep(800 * time.Millisecond) // 给首屏导航一点渲染时间
+}
+
+// attachPageSession：找一个页面 target 并挂上 CDP session（用完记得 detach）
+func (s *loginSession) attachPageSession() (string, func(), error) {
+	if s.closed || s.client == nil {
+		return "", nil, fmt.Errorf("登录会话已结束")
+	}
+	var targets struct {
+		TargetInfos []struct {
+			TargetID string `json:"targetId"`
+			Type     string `json:"type"`
+			URL      string `json:"url"`
+		} `json:"targetInfos"`
+	}
+	if err := s.client.call("Target.getTargets", nil, &targets, 5*time.Second); err != nil {
+		return "", nil, err
+	}
+	targetID := ""
+	for _, t := range targets.TargetInfos {
+		if t.Type == "page" {
+			targetID = t.TargetID
+			break
+		}
+	}
+	if targetID == "" {
+		return "", nil, fmt.Errorf("没有可用的页面")
+	}
+	var attach struct {
+		SessionID string `json:"sessionId"`
+	}
+	if err := s.client.call("Target.attachToTarget", map[string]any{"targetId": targetID, "flatten": true}, &attach, 5*time.Second); err != nil {
+		return "", nil, err
+	}
+	detach := func() {
+		_ = s.client.call("Target.detachFromTarget", map[string]any{"sessionId": attach.SessionID}, nil, 3*time.Second)
+	}
+	return attach.SessionID, detach, nil
+}
+
+func (s *loginSession) viewportSize(sid string) (float64, float64, error) {
+	var metrics struct {
+		CssVisualViewport struct {
+			ClientWidth  float64 `json:"clientWidth"`
+			ClientHeight float64 `json:"clientHeight"`
+		} `json:"cssVisualViewport"`
+	}
+	if err := s.client.callSession(sid, "Page.getLayoutMetrics", nil, &metrics, 6*time.Second); err != nil {
+		return 0, 0, err
+	}
+	return metrics.CssVisualViewport.ClientWidth, metrics.CssVisualViewport.ClientHeight, nil
+}
+
+// screenshot：当前页面截图（jpeg base64，不带 data: 前缀）+ CSS 视口尺寸
+func (s *loginSession) screenshot() (string, float64, float64, error) {
+	sid, detach, err := s.attachPageSession()
+	if err != nil {
+		return "", 0, 0, err
+	}
+	defer detach()
+	var shot struct {
+		Data string `json:"data"`
+	}
+	if err := s.client.callSession(sid, "Page.captureScreenshot", map[string]any{"format": "jpeg", "quality": 72}, &shot, 12*time.Second); err != nil {
+		return "", 0, 0, err
+	}
+	w, h, err := s.viewportSize(sid)
+	if err != nil {
+		w, h = 0, 0
+	}
+	return shot.Data, w, h, nil
+}
+
+type loginInputEvent struct {
+	Type       string  `json:"type"`
+	X          float64 `json:"x"`
+	Y          float64 `json:"y"`
+	DeltaY     float64 `json:"delta_y"`
+	Text       string  `json:"text"`
+	Key        string  `json:"key"`
+	URL        string  `json:"url"`
+	Expression string  `json:"expression"`
+}
+
+var keyVirtualCodes = map[string]int{
+	"Enter": 13, "Backspace": 8, "Tab": 9, "Escape": 27,
+	"ArrowUp": 38, "ArrowDown": 40, "ArrowLeft": 37, "ArrowRight": 39,
+}
+
+// dispatchInput：把控制台发来的点击/滚动/文字/按键/eval 转发给受控浏览器
+func (s *loginSession) dispatchInput(in loginInputEvent) (map[string]any, error) {
+	sid, detach, err := s.attachPageSession()
+	if err != nil {
+		return nil, err
+	}
+	defer detach()
+	switch in.Type {
+	case "click":
+		if in.X < 0 || in.X > 1 || in.Y < 0 || in.Y > 1 {
+			return nil, fmt.Errorf("坐标必须在 0-1 之间")
+		}
+		w, h, err := s.viewportSize(sid)
+		if err != nil || w <= 0 {
+			w, h = 1180, 860
+		}
+		x, y := in.X*w, in.Y*h
+		// 先把指针移过去再按下抬起，保证 mouseenter/over 监听器正常触发
+		_ = s.client.callSession(sid, "Input.dispatchMouseEvent", map[string]any{
+			"type": "mouseMoved", "x": x, "y": y, "button": "none",
+		}, nil, 8*time.Second)
+		if err := s.client.callSession(sid, "Input.dispatchMouseEvent", map[string]any{
+			"type": "mousePressed", "x": x, "y": y, "button": "left", "buttons": 1, "clickCount": 1,
+		}, nil, 8*time.Second); err != nil {
+			return nil, err
+		}
+		return map[string]any{"ok": true, "x": x, "y": y}, s.client.callSession(sid, "Input.dispatchMouseEvent", map[string]any{
+			"type": "mouseReleased", "x": x, "y": y, "button": "left", "buttons": 0, "clickCount": 1,
+		}, nil, 8*time.Second)
+	case "wheel":
+		w, h, err := s.viewportSize(sid)
+		if err != nil || w <= 0 {
+			w, h = 1180, 860
+		}
+		return map[string]any{"ok": true}, s.client.callSession(sid, "Input.dispatchMouseEvent", map[string]any{
+			"type": "mouseWheel", "x": w / 2, "y": h / 2, "deltaX": float64(0), "deltaY": in.DeltaY,
+		}, nil, 8*time.Second)
+	case "text":
+		if strings.TrimSpace(in.Text) == "" {
+			return map[string]any{"ok": true}, nil
+		}
+		return map[string]any{"ok": true}, s.client.callSession(sid, "Input.insertText", map[string]any{"text": in.Text}, nil, 8*time.Second)
+	case "eval":
+		var out struct {
+			Result struct {
+				Type  string          `json:"type"`
+				Value json.RawMessage `json:"value"`
+			} `json:"result"`
+		}
+		if err := s.client.callSession(sid, "Runtime.evaluate", map[string]any{
+			"expression": in.Expression, "returnByValue": true, "awaitPromise": true,
+		}, &out, 15*time.Second); err != nil {
+			return nil, err
+		}
+		res := map[string]any{"ok": true, "type": out.Result.Type}
+		if len(out.Result.Value) > 0 {
+			var v any
+			if err := json.Unmarshal(out.Result.Value, &v); err == nil {
+				res["result"] = v
+			} else {
+				res["result"] = string(out.Result.Value)
+			}
+		}
+		return res, nil
+	case "key":
+		vk, ok := keyVirtualCodes[in.Key]
+		if !ok {
+			return nil, fmt.Errorf("不支持的按键：%s", in.Key)
+		}
+		down := map[string]any{"type": "keyDown", "key": in.Key, "code": in.Key, "windowsVirtualKeyCode": vk, "nativeVirtualKeyCode": vk}
+		if in.Key == "Enter" {
+			down["text"] = "\r"
+		}
+		if err := s.client.callSession(sid, "Input.dispatchKeyEvent", down, nil, 8*time.Second); err != nil {
+			return nil, err
+		}
+		return map[string]any{"ok": true}, s.client.callSession(sid, "Input.dispatchKeyEvent", map[string]any{
+			"type": "keyUp", "key": in.Key, "code": in.Key, "windowsVirtualKeyCode": vk, "nativeVirtualKeyCode": vk,
+		}, nil, 8*time.Second)
+	case "nav":
+		if !strings.HasPrefix(in.URL, "http://") && !strings.HasPrefix(in.URL, "https://") {
+			return nil, fmt.Errorf("仅支持 http(s) 地址")
+		}
+		return map[string]any{"ok": true}, s.client.callSession(sid, "Page.navigate", map[string]any{"url": in.URL}, nil, 12*time.Second)
+	default:
+		return nil, fmt.Errorf("未知事件类型：%s", in.Type)
+	}
 }
 
 func (s *loginSession) closeSession() {

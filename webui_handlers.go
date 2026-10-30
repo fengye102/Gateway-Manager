@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -669,7 +668,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 		if id == "" {
 			id = preset.ID
 		}
-		profileRoot := filepath.Join(os.TempDir(), "gateway-manager-login")
+		profileRoot := profileRootDefault()
 		session, err := newLoginSession(id, preset, profileRoot)
 		if err != nil {
 			proxyError(w, http.StatusBadRequest, err.Error())
@@ -686,7 +685,49 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 			"ok": true, "id": id, "preset": preset.ID,
 			"login_url": preset.LoginURL, "login_hint": preset.LoginHint,
 			"browser": session.Browser, "port": session.Port,
+			"remote_view": session.headless,
 		})
+
+	case "channels/login/screen":
+		id := strings.TrimSpace(r.URL.Query().Get("id"))
+		s.loginMu.Lock()
+		session := s.logins[id]
+		s.loginMu.Unlock()
+		if session == nil {
+			writeJSON(w, http.StatusOK, map[string]any{"active": false})
+			return
+		}
+		image, cssW, cssH, err := session.screenshot()
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"active": true, "error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"active": true, "image": image, "css_width": cssW, "css_height": cssH,
+		})
+
+	case "channels/login/input":
+		var payload struct {
+			ID string `json:"id"`
+			loginInputEvent
+		}
+		if err := s.readJSONBody(r, &payload); err != nil {
+			proxyError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		s.loginMu.Lock()
+		session := s.logins[strings.TrimSpace(payload.ID)]
+		s.loginMu.Unlock()
+		if session == nil {
+			proxyError(w, http.StatusNotFound, "登录会话不存在或已结束："+payload.ID)
+			return
+		}
+		result, err := session.dispatchInput(payload.loginInputEvent)
+		if err != nil {
+			proxyError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
 
 	case "channels/login/status":
 		id := strings.TrimSpace(r.URL.Query().Get("id"))
@@ -734,6 +775,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 		presetForHint, _ := findPreset(session.Preset)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"active":         true,
+			"remote_view":    session.headless,
 			"storage":        storageDump,
 			"login_url":      session.LoginURL,
 			"login_hint":     presetForHint.LoginHint,

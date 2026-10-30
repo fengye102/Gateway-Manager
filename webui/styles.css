@@ -2131,3 +2131,20 @@ pre {
   font-size: var(--text-caption);
   font-variant-numeric: tabular-nums;
 }
+
+/* 远端登录画面（headless 场景） */
+.login-screen { margin-top: 10px; }
+.login-screen img {
+  display: block;
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: #000;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.login-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; }
+.login-toolbar input { flex: 1 1 220px; min-width: 0; }
+#loginScreenNote { margin: 8px 0 0; }

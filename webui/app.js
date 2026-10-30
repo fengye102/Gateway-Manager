@@ -833,12 +833,39 @@
       loginState.id = r.body.id;
       $('loginPanel').hidden = false;
       $('loginTitle').textContent = '网页登录：' + presetId;
-      $('loginHint').textContent = (r.body.login_hint ? r.body.login_hint + ' · ' : '') + '已通过 ' + (r.body.browser || 'Chromium') + ' 打开登录窗口';
+      const remote = !!r.body.remote_view;
+      $('loginHint').textContent = (r.body.login_hint ? r.body.login_hint + ' · ' : '') + '已通过 ' + (r.body.browser || 'Chromium') + ' 打开登录窗口' + (remote ? '（服务器无显示器，画面已内嵌到下方，直接点击操作）' : '');
       $('loginStatus').textContent = '等待浏览器登录完成...';
+      $('loginScreenWrap').hidden = !remote;
       if (loginState.timer) clearInterval(loginState.timer);
       loginState.timer = setInterval(pollChannelLogin, 1500);
       pollChannelLogin();
+      if (loginState.screenTimer) clearInterval(loginState.screenTimer);
+      loginState.screenTimer = null;
+      if (remote) {
+        loginState.screenTimer = setInterval(pollLoginScreen, 1400);
+        pollLoginScreen();
+      }
     });
+  }
+
+  function pollLoginScreen() {
+    if (!loginState.id) return;
+    api('channels/login/screen?id=' + encodeURIComponent(loginState.id)).then(function (r) {
+      if (!r.ok) return;
+      const d = r.body || {};
+      const img = $('loginScreen');
+      if (!d.active) {
+        img.removeAttribute('src');
+        return;
+      }
+      if (d.error) return; // 单次截图失败等下一轮
+      if (d.image) img.src = 'data:image/jpeg;base64,' + d.image;
+    }).catch(function () {});
+  }
+
+  function refreshLoginScreenSoon() {
+    setTimeout(pollLoginScreen, 350);
   }
 
   function pollChannelLogin() {
@@ -868,6 +895,10 @@
     if (loginState.timer) {
       clearInterval(loginState.timer);
       loginState.timer = null;
+    }
+    if (loginState.screenTimer) {
+      clearInterval(loginState.screenTimer);
+      loginState.screenTimer = null;
     }
     loginState.id = null;
   }
@@ -1254,6 +1285,43 @@
       $('loginPanel').hidden = true;
       toast('已取消网页登录会话', '', 'info');
     });
+
+    /* 远端登录画面交互（headless 场景） */
+    $('loginScreen').addEventListener('click', function (ev) {
+      if (!loginState.id) return;
+      const rect = this.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      post('channels/login/input', {
+        id: loginState.id, type: 'click',
+        x: (ev.clientX - rect.left) / rect.width,
+        y: (ev.clientY - rect.top) / rect.height
+      }).then(refreshLoginScreenSoon);
+    });
+    $('loginScreen').addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
+    $('loginTypeBtn').addEventListener('click', function () {
+      const input = $('loginTypeInput');
+      const text = (input.value || '').trim();
+      if (!text || !loginState.id) return;
+      input.value = '';
+      post('channels/login/input', { id: loginState.id, type: 'text', text: text }).then(refreshLoginScreenSoon);
+    });
+    $('loginTypeInput').addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); $('loginTypeBtn').click(); }
+    });
+    const sendLoginKey = function (key) {
+      if (!loginState.id) return;
+      post('channels/login/input', { id: loginState.id, type: 'key', key: key }).then(refreshLoginScreenSoon);
+    };
+    $('loginEnterBtn').addEventListener('click', function () { sendLoginKey('Enter'); });
+    $('loginBackspaceBtn').addEventListener('click', function () { sendLoginKey('Backspace'); });
+    $('loginTabBtn').addEventListener('click', function () { sendLoginKey('Tab'); });
+    $('loginUpBtn').addEventListener('click', function () {
+      if (loginState.id) post('channels/login/input', { id: loginState.id, type: 'wheel', delta_y: -600 }).then(refreshLoginScreenSoon);
+    });
+    $('loginDownBtn').addEventListener('click', function () {
+      if (loginState.id) post('channels/login/input', { id: loginState.id, type: 'wheel', delta_y: 600 }).then(refreshLoginScreenSoon);
+    });
+    $('loginRefreshBtn').addEventListener('click', pollLoginScreen);
 
     /* Logs */
     $('logSearch').addEventListener('input', function (ev) {

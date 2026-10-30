@@ -411,8 +411,22 @@
                   <button type="button" class="btn primary sm" id="loginSaveBtn">保存抓到的凭证</button>
                 </div>
               </div>
-              <div class="card-body">
+                <div class="card-body">
                 <div class="sub-surface mono" id="loginStatus">等待浏览器响应...</div>
+                <div class="login-screen" id="loginScreenWrap" hidden>
+                  <img id="loginScreen" alt="受控浏览器画面" draggable="false">
+                  <div class="login-toolbar">
+                    <input type="text" id="loginTypeInput" placeholder="先点画面里的输入框，再在这里输入文字" autocomplete="off">
+                    <button type="button" class="btn primary sm" id="loginTypeBtn">输入</button>
+                    <button type="button" class="btn ghost sm" id="loginEnterBtn">回车</button>
+                    <button type="button" class="btn ghost sm" id="loginBackspaceBtn">退格</button>
+                    <button type="button" class="btn ghost sm" id="loginTabBtn">Tab</button>
+                    <button type="button" class="btn ghost sm" id="loginUpBtn">↑</button>
+                    <button type="button" class="btn ghost sm" id="loginDownBtn">↓</button>
+                    <button type="button" class="btn ghost sm" id="loginRefreshBtn">刷新画面</button>
+                  </div>
+                  <p class="section-desc" id="loginScreenNote">画面为服务器端受控浏览器的实时截图（约 1.5 秒刷新）；点击画面 = 移动并左键单击</p>
+                </div>
               </div>
             </div>
 
