@@ -38,7 +38,9 @@ func (s *Server) deepseekForward(ctx context.Context, ch Channel, preset Channel
 	if err != nil {
 		return nil, err
 	}
-	vendorResp, err := client.complete(ctx, sessionID, buildDeepSeekPrompt(messages), thinking, search)
+	prompt := buildDeepSeekPrompt(messages)
+	promptTokens := estimatePromptTokens(prompt)
+	vendorResp, err := client.complete(ctx, sessionID, prompt, thinking, search)
 	if err != nil {
 		return nil, err
 	}
@@ -66,9 +68,9 @@ func (s *Server) deepseekForward(ctx context.Context, ch Channel, preset Channel
 				"finish_reason": "stop",
 			}},
 			"usage": map[string]any{
-				"prompt_tokens":     0,
+				"prompt_tokens":     promptTokens,
 				"completion_tokens": usage,
-				"total_tokens":      usage,
+				"total_tokens":      promptTokens + usage,
 			},
 		}), nil
 	}
@@ -111,7 +113,7 @@ func (s *Server) deepseekForward(ctx context.Context, ch Channel, preset Channel
 			raw, _ := json.Marshal(map[string]any{
 				"id": id, "object": "chat.completion.chunk", "created": created, "model": model,
 				"choices": []any{},
-				"usage":   map[string]any{"prompt_tokens": 0, "completion_tokens": usage, "total_tokens": usage},
+				"usage":   map[string]any{"prompt_tokens": promptTokens, "completion_tokens": usage, "total_tokens": promptTokens + usage},
 			})
 			_, _ = bw.WriteString("data: ")
 			_, _ = bw.Write(raw)
@@ -260,4 +262,20 @@ func jsonResponse(payload map[string]any) *http.Response {
 		Header:     header,
 		Body:       io.NopCloser(strings.NewReader(string(raw))),
 	}
+}
+
+func estimatePromptTokens(text string) int {
+	cjk, ascii := 0, 0
+	for _, r := range text {
+		switch {
+		case r >= 0x2E80:
+			cjk++
+		case r > ' ':
+			ascii++
+		}
+	}
+	if cjk == 0 && ascii == 0 {
+		return 0
+	}
+	return (cjk*2+ascii+3)/4 + 1
 }

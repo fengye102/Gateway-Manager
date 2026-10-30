@@ -64,9 +64,13 @@ func builtinChannelPresets() []ChannelPreset {
 				"Accept":             "application/json, text/event-stream",
 				"x-session-affinity": "gateway-manager",
 			},
-			Models:   []string{"grok-code", "qwen3-coder", "kimi-k2", "glm-4.6"},
+			Models: []string{
+				"big-pickle", "deepseek-v4.1-flash-free", "glm-5.3-flash-free", "mimo-v2.6-flash-free",
+				"flint-40b-free", "nemotron-3.5-super-vl-free", "deepseek-v4.1-flash", "deepseek-v4-pro",
+				"glm-5.3", "kimi-k2.6", "minimax-m3", "qwen3.8-max",
+			},
 			Protocol: "openai",
-			Notes:    "匿名渠道：token 填 public 即可；官方 OpenAI 兼容，可直接用",
+			Notes:    "匿名 token 填 public；免费档被上游锁定为「仅官方客户端可用」，第三方调用返回 429 配额限制，付费模型需填有效 key",
 		},
 		{
 			ID: "zhipu-autoclaw", Name: "智谱 AutoGLM / autoclaw", Vendor: "zhipu",
@@ -119,8 +123,13 @@ func builtinChannelPresets() []ChannelPreset {
 			LoginHint:    "Google 邮箱或 Magic Link 登录",
 			Auth:         ChannelAuth{Type: "cookie", Header: "Cookie"},
 			ExtraHeaders: map[string]string{"x-runable-device": "dweb"},
-			Protocol:     "openai",
-			Notes:        "已适配：cookie + /api/chat/text + AI SDK 流",
+			Models: []string{
+				"runable/runner-chat", "anthropic/claude-haiku-5.5", "anthropic/claude-sonnet-5.5",
+				"anthropic/claude-opus-5.5", "anthropic/claude-fable-5.1", "zai/glm-5.3-flash",
+				"zai/glm-5.3", "openai/gpt-6.1-sol", "openai/gpt-6-astra",
+			},
+			Protocol: "openai",
+			Notes:    "已适配：cookie + /api/chat/text + AI SDK 流；modelId 原样透传，清单见 /api/rpc/public/models/getAIChatModels",
 		},
 	}
 }
