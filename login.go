@@ -463,11 +463,21 @@ func launchLoginBrowser(browser, profileDir, id string, preset ChannelPreset, pr
 	if headless {
 		// 无显示器环境先开 about:blank，等 UA 伪装完成后再导航到登录页
 		startURL = "about:blank"
+	} else if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+		// Xvfb 有头模式：对 Cloudflare 是普通浏览器（headless=new 指纹会被 Turnstile 无限质询）。
+		// Xvfb 起不来则退回 headless。
+		if ensureXvfb() == "" {
+			headless = true
+			startURL = "about:blank"
+		}
 	}
 	// 记下这次用的出口代理，attachExisting 靠它判断能否复用已开的浏览器
 	_ = os.WriteFile(filepath.Join(profileDir, "login-proxy.txt"), []byte(proxy), 0o644)
 	args := buildLoginBrowserArgs(profileDir, startURL, headless, os.Geteuid() == 0, proxy)
 	cmd := exec.Command(browser, args...)
+	if !headless && os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+		cmd.Env = append(os.Environ(), "DISPLAY=:99")
+	}
 	if runtime.GOOS != "windows" {
 		// 单独进程组：Chromium 会派生一堆渲染/GPU 子进程，
 		// 只 kill 主进程会留下一整组孤儿进程继续吃内存、占着 profile
@@ -688,12 +698,50 @@ func cookiesToToken(cookies []cdpCookie) string {
 // ---------- headless 远端登录支持 ----------
 
 // shouldRunHeadless：服务器上通常没有显示器；检测不到图形会话就用 headless 模式跑，
-// 画面由控制台「远端登录画面」轮询截图呈现
+// 画面由控制台「远端登录画面」轮询截图呈现。
+// 注意：Cloudflare Turnstile 能识别 --headless=new 指纹并无限卡「Just a moment」；
+// 机器上有 Xvfb 时改走 X11 有头模式（对 CF 是普通浏览器），远端截图通道不受影响。
 func shouldRunHeadless() bool {
 	if runtime.GOOS != "linux" {
 		return false
 	}
-	return os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == ""
+	if os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "" {
+		return false
+	}
+	return !xvfbAvailable()
+}
+
+// xvfbAvailable：检测 Xvfb 是否可用（存在 + :99 空闲或已由我们托管）
+func xvfbAvailable() bool {
+	if _, err := exec.LookPath("Xvfb"); err != nil {
+		return false
+	}
+	return true
+}
+
+// ensureXvfb：确保 :99 上有 Xvfb 在跑（有就复用），返回其 DISPLAY 值
+func ensureXvfb() string {
+	dpy := ":99"
+	// 已有 X server 在 :99（X lock 文件存在且可连接）则直接用
+	if _, err := os.Stat("/tmp/.X11-unix/X99"); err == nil {
+		return dpy
+	}
+	cmd := exec.Command("Xvfb", dpy, "-screen", "0", "1280x900x24", "-nolisten", "tcp")
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	if err := cmd.Start(); err != nil {
+		return ""
+	}
+	// 由 gateway 进程托管生命周期；重复启动时由 X lock 防重入
+	go func() { _ = cmd.Wait() }()
+	// 等 X socket 就绪
+	for i := 0; i < 30; i++ {
+		if _, err := os.Stat("/tmp/.X11-unix/X99"); err == nil {
+			return dpy
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return ""
 }
 
 // buildLoginBrowserArgs：构造受控浏览器启动参数
@@ -746,6 +794,16 @@ func profileRootDefault() string {
 		}
 	}
 	return filepath.Join(os.TempDir(), "gateway-manager-login")
+}
+
+// remoteView：登录画面是否需要走「远端截图」呈现（服务器无显示器场景）。
+// headless 和 Xvfb 有头都属于这类；控制台用同一套 CDP 截图通道。
+func (s *loginSession) remoteView() bool {
+	if s.headless {
+		return true
+	}
+	// 有头模式：DISPLAY 是我们自管的 :99 Xvfb 时也算远端画面
+	return os.Getenv("DISPLAY") == "" || os.Getenv("DISPLAY") == ":99"
 }
 
 // prepareHeadlessPage：headless 启动后伪装 UA 并导航到真正的登录页

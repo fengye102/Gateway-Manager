@@ -818,7 +818,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 			"ok": true, "id": id, "preset": preset.ID,
 			"login_url": preset.LoginURL, "login_hint": preset.LoginHint,
 			"browser": session.Browser, "port": session.Port,
-			"remote_view": session.headless, "proxy": session.proxy,
+			"remote_view": session.remoteView(), "proxy": session.proxy,
 			"existing_accounts": existing, "fresh": payload.Fresh,
 		})
 
@@ -909,7 +909,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 		presetForHint, _ := findPreset(session.Preset)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"active":         true,
-			"remote_view":    session.headless,
+			"remote_view":    session.remoteView(),
 			"storage":        storageDump,
 			"login_url":      session.LoginURL,
 			"login_hint":     presetForHint.LoginHint,
