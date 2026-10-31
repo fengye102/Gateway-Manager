@@ -44,6 +44,7 @@ type Channel struct {
 	BaseURL  string            `json:"base_url,omitempty"`
 	Models   []string          `json:"models,omitempty"`
 	Headers  map[string]string `json:"headers,omitempty"`
+	Proxy    string            `json:"proxy,omitempty"` // 出口代理（如 socks5://127.0.0.1:1080），空=直连
 	Priority int               `json:"priority"`
 	Weight   int               `json:"weight"`
 	Enabled  bool              `json:"enabled"`

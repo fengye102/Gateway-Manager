@@ -31,11 +31,11 @@ type runableClient struct {
 	HC     *http.Client
 }
 
-func newRunableClient(cookie string, timeout time.Duration) *runableClient {
+func newRunableClient(cookie string, timeout time.Duration, proxy string) *runableClient {
 	if timeout <= 0 {
 		timeout = 300 * time.Second
 	}
-	return &runableClient{Cookie: cookie, HC: &http.Client{Timeout: timeout}}
+	return &runableClient{Cookie: cookie, HC: httpClientWithProxy(timeout, proxy)}
 }
 
 func (c *runableClient) headers() http.Header {
@@ -104,11 +104,11 @@ func (c *runableClient) chat(ctx context.Context, messageID, model, prompt strin
 		resp.Body.Close()
 		switch {
 		case resp.StatusCode == 401 || strings.Contains(string(raw), "SESSION_NOT_FOUND"):
-			return nil, fmt.Errorf("Runable 登录态已失效，请重新网页登录")
+			return nil, &accountError{reason: "Runable 登录态已失效，请重新网页登录", cooldown: 30 * time.Minute}
 		case resp.StatusCode == 402 || strings.Contains(string(raw), "OUT_OF_CREDITS"):
-			return nil, fmt.Errorf("Runable 积分已耗尽")
+			return nil, &accountError{reason: "Runable 积分已耗尽", cooldown: 30 * time.Minute}
 		case resp.StatusCode == 429:
-			return nil, fmt.Errorf("Runable 限流，请稍后重试")
+			return nil, &accountError{reason: "Runable 限流，请稍后重试", cooldown: time.Minute}
 		}
 		return nil, fmt.Errorf("Runable 返回 HTTP %d：%s", resp.StatusCode, truncateForReport(string(raw), 200))
 	}
@@ -274,7 +274,7 @@ func (s *Server) runableForward(ctx context.Context, ch Channel, preset ChannelP
 	if cookie == "" {
 		cookie = strings.TrimSpace(ch.Token)
 	}
-	client := newRunableClient(cookie, 300*time.Second)
+	client := newRunableClient(cookie, 300*time.Second, ch.Proxy)
 	messageID := randomUUID()
 	resp, err := client.chat(ctx, messageID, model, prompt)
 	if err != nil {

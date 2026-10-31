@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-var version = "2.9.2"
+var version = "2.9.3"
 
 const usageText = `
 网关管家 gateway-manager —— 本机网关聚合 + 策略注入（Windows / Linux 通用）
@@ -83,9 +83,10 @@ func runProbeRunable(args []string) {
 	model := fs.String("model", "runable/runner-chat", "模型")
 	prompt := fs.String("prompt", "用一句话介绍你自己", "发送内容")
 	headBytes := fs.Int("head", 2000, "打印响应前多少字节")
+	proxy := fs.String("proxy", "", "出口代理（如 socks5://127.0.0.1:1080）")
 	_ = fs.Parse(args)
 
-	client := newRunableClient(strings.TrimSpace(*cookie), 300*time.Second)
+	client := newRunableClient(strings.TrimSpace(*cookie), 300*time.Second, *proxy)
 	ctx := context.Background()
 	if err := client.session(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "会话校验失败：%v\n", err)

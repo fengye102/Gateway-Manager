@@ -462,6 +462,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 					"token_masked": maskKey(ch.Token),
 					"has_token":    strings.TrimSpace(ch.Token) != "",
 					"key_count":    len(channelKeys(ch)),
+					"proxy":        ch.Proxy,
 					"protocol":     preset.Protocol,
 					"upstream_id":  "ch-" + ch.ID,
 					"notes":        preset.Notes,
@@ -514,6 +515,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 			BaseURL  string            `json:"base_url"`
 			Models   []string          `json:"models"`
 			Headers  map[string]string `json:"headers"`
+			Proxy    string            `json:"proxy"`
 			Priority int               `json:"priority"`
 			Weight   int               `json:"weight"`
 			Enabled  *bool             `json:"enabled"`
@@ -560,6 +562,12 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 				}
 				ch.Priority = payload.Priority
 				ch.Weight = payload.Weight
+				if norm, perr := normalizeProxy(payload.Proxy); perr == nil {
+					ch.Proxy = norm
+				} else {
+					proxyError(w, http.StatusBadRequest, perr.Error())
+					return
+				}
 				if payload.Enabled != nil {
 					ch.Enabled = *payload.Enabled
 				}
@@ -574,6 +582,11 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 			if payload.Enabled != nil {
 				enabled = *payload.Enabled
 			}
+			normProxy, perr := normalizeProxy(payload.Proxy)
+			if perr != nil {
+				proxyError(w, http.StatusBadRequest, perr.Error())
+				return
+			}
 			next.Channels = append(next.Channels, Channel{
 				ID:       id,
 				Preset:   payload.Preset,
@@ -582,6 +595,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 				BaseURL:  payload.BaseURL,
 				Models:   payload.Models,
 				Headers:  payload.Headers,
+				Proxy:    normProxy,
 				Priority: payload.Priority,
 				Weight:   payload.Weight,
 				Enabled:  enabled,
@@ -594,6 +608,73 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 		}
 		s.store.Info("渠道已保存：%s（模板 %s）", id, preset.ID)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": id, "upstream_id": "ch-" + id})
+
+	case "channels/key/delete":
+		// 删除渠道里的单个账号（凭证），不删除整个渠道。
+		// index=-1 表示删主凭证（Token/Cookie），并把 Tokens[0] 提升为主凭证。
+		var payload struct {
+			ID    string `json:"id"`
+			Index int    `json:"index"`
+		}
+		if err := s.readJSONBody(r, &payload); err != nil {
+			proxyError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		cfg := s.store.Config()
+		next := cloneConfig(cfg)
+		found := false
+		remaining := 0
+		var badIndex bool
+		for i := range next.Channels {
+			if next.Channels[i].ID != payload.ID {
+				continue
+			}
+			found = true
+			ch := &next.Channels[i]
+			// index 与前端账号卡片一致：按 channelKeys 的顺序编号
+			keys := channelKeys(*ch)
+			if payload.Index < 0 || payload.Index >= len(keys) {
+				badIndex = true
+				break
+			}
+			target := keys[payload.Index]
+			if target == ch.Token || target == ch.Cookie {
+				// 删的是主凭证：清空 Token/Cookie，把 Tokens 里的下一个提上来
+				ch.Token = ""
+				ch.Cookie = ""
+			}
+			kept := make([]string, 0, len(ch.Tokens))
+			for _, t := range ch.Tokens {
+				if t != target {
+					kept = append(kept, t)
+				}
+			}
+			ch.Tokens = kept
+			if ch.Token == "" && len(ch.Tokens) > 0 {
+				ch.Token = ch.Tokens[0]
+				if _, isCookiePreset := channelAdapters[ch.Preset]; isCookiePreset {
+					ch.Cookie = ch.Tokens[0]
+				}
+				ch.Tokens = append([]string{}, ch.Tokens[1:]...)
+			}
+			remaining = len(channelKeys(*ch))
+			break
+		}
+		if !found {
+			proxyError(w, http.StatusNotFound, "渠道不存在："+payload.ID)
+			return
+		}
+		if badIndex {
+			proxyError(w, http.StatusBadRequest, "账号序号超出范围")
+			return
+		}
+		s.autoSnapshot("before-channel-key-delete")
+		if err := s.saveConfigAndReload(next); err != nil {
+			proxyError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		s.store.Info("渠道 %s 已移除一个账号，剩余 %d 个", payload.ID, remaining)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": payload.ID, "key_count": remaining})
 
 	case "channels/test":
 		var payload struct {
@@ -632,7 +713,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 		for k, v := range ch.Headers {
 			req.Header.Set(k, v)
 		}
-		client := &http.Client{Timeout: 15 * time.Second}
+		client := httpClientWithProxy(15*time.Second, ch.Proxy)
 		started := time.Now()
 		resp, err := client.Do(req)
 		latency := time.Since(started).Milliseconds()
@@ -654,6 +735,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 		var payload struct {
 			Preset string `json:"preset"`
 			ID     string `json:"id"`
+			Proxy  string `json:"proxy"`
 		}
 		if err := s.readJSONBody(r, &payload); err != nil {
 			proxyError(w, http.StatusBadRequest, err.Error())
@@ -669,7 +751,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 			id = preset.ID
 		}
 		profileRoot := profileRootDefault()
-		session, err := newLoginSession(id, preset, profileRoot)
+		session, err := newLoginSession(id, preset, profileRoot, payload.Proxy)
 		if err != nil {
 			proxyError(w, http.StatusBadRequest, err.Error())
 			return
@@ -681,11 +763,18 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 		s.logins[id] = session
 		s.loginMu.Unlock()
 		s.store.Info("已打开 %s 的登录页：%s（浏览器 %s）", preset.Name, preset.LoginURL, filepath.Base(session.Browser))
+		existing := 0
+		for _, ch := range s.store.Config().Channels {
+			if ch.ID == id {
+				existing = len(channelKeys(ch))
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok": true, "id": id, "preset": preset.ID,
 			"login_url": preset.LoginURL, "login_hint": preset.LoginHint,
 			"browser": session.Browser, "port": session.Port,
-			"remote_view": session.headless,
+			"remote_view": session.headless, "proxy": session.proxy,
+			"existing_accounts": existing,
 		})
 
 	case "channels/login/screen":
@@ -862,6 +951,9 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 			}
 			next.Channels[i].Preset = preset.ID
 			next.Channels[i].Enabled = enabled
+			if session.proxy != "" {
+				next.Channels[i].Proxy = session.proxy
+			}
 			found = true
 			existing := channelKeys(next.Channels[i])
 			duplicated := false
@@ -886,7 +978,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 		if !found {
 			next.Channels = append(next.Channels, Channel{
 				ID: id, Preset: preset.ID, Name: preset.Name, Token: token, Cookie: cookieValue,
-				Enabled: enabled, Headers: map[string]string{},
+				Enabled: enabled, Headers: map[string]string{}, Proxy: session.proxy,
 			})
 		}
 		keyCount := 0

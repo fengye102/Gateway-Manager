@@ -280,7 +280,8 @@ type loginSession struct {
 	client    *cdpClient
 	proc      *exec.Cmd
 	mu        sync.Mutex
-	headless  bool // 无显示器环境下以 headless 模式运行，画面由控制台远端呈现
+	headless  bool   // 无显示器环境下以 headless 模式运行，画面由控制台远端呈现
+	proxy     string // 启动时使用的出口代理，登录完成后随凭证一起写入渠道
 }
 
 var findBrowserFunc = findChromiumBrowser
@@ -349,7 +350,7 @@ func findChromiumBrowser() (string, bool) {
 	return "", false
 }
 
-func newLoginSession(id string, preset ChannelPreset, profileRoot string) (*loginSession, error) {
+func newLoginSession(id string, preset ChannelPreset, profileRoot, proxy string) (*loginSession, error) {
 	browser, ok := findBrowserFunc()
 	if !ok {
 		return nil, fmt.Errorf("未找到 Chrome / Edge / Chromium，无法网页登录（可改用手动粘贴凭证）")
@@ -357,12 +358,22 @@ func newLoginSession(id string, preset ChannelPreset, profileRoot string) (*logi
 	if strings.TrimSpace(preset.LoginURL) == "" {
 		return nil, fmt.Errorf("渠道 %s 没有配置登录页地址", preset.ID)
 	}
+	proxy, err := normalizeProxy(proxy)
+	if err != nil {
+		return nil, err
+	}
+	if proxy != "" {
+		// Chromium 的 --proxy-server 不支持带账号密码的代理，提前拦掉而不是静默直连
+		if _, err := proxyForBrowser(proxy); err != nil {
+			return nil, err
+		}
+	}
 	if err := os.MkdirAll(profileRoot, 0o755); err != nil {
 		return nil, err
 	}
 
 	// 1) 若该 profile 已经有可用的调试实例（浏览器还开着），直接复用
-	if session, err := attachExisting(profileRoot, id, preset); err == nil && session != nil {
+	if session, err := attachExisting(profileRoot, id, preset, proxy); err == nil && session != nil {
 		return session, nil
 	}
 
@@ -373,7 +384,7 @@ func newLoginSession(id string, preset ChannelPreset, profileRoot string) (*logi
 	}
 	var lastErr error
 	for i, profileDir := range attempts {
-		session, err := launchLoginBrowser(browser, profileDir, id, preset)
+		session, err := launchLoginBrowser(browser, profileDir, id, preset, proxy)
 		if err == nil {
 			return session, nil
 		}
@@ -389,8 +400,18 @@ func newLoginSession(id string, preset ChannelPreset, profileRoot string) (*logi
 }
 
 // attachExisting：profile 里已有活着的调试端口就直接接上（浏览器当前开着）
-func attachExisting(profileRoot, id string, preset ChannelPreset) (*loginSession, error) {
-	portFile := filepath.Join(profileRoot, "login-"+id, "DevToolsActivePort")
+func attachExisting(profileRoot, id string, preset ChannelPreset, proxy string) (*loginSession, error) {
+	profileDir := filepath.Join(profileRoot, "login-"+id)
+	// 出口代理变了就不能复用旧浏览器：cf_clearance 之类 cookie 绑定出口 IP，
+	// 复用会拿到一个「登录成功但一问就 403」的会话。
+	if used, err := os.ReadFile(filepath.Join(profileDir, "login-proxy.txt")); err == nil {
+		if strings.TrimSpace(string(used)) != proxy {
+			return nil, fmt.Errorf("已运行的浏览器使用了另一个出口代理，需重新启动")
+		}
+	} else if proxy != "" {
+		return nil, fmt.Errorf("已运行的浏览器没有记录出口代理")
+	}
+	portFile := filepath.Join(profileDir, "DevToolsActivePort")
 	raw, err := os.ReadFile(portFile)
 	if err != nil {
 		return nil, err
@@ -411,11 +432,12 @@ func attachExisting(profileRoot, id string, preset ChannelPreset) (*loginSession
 	return &loginSession{
 		ID: id, Preset: preset.ID, LoginURL: preset.LoginURL, Browser: "已运行的浏览器进程",
 		Port: port, StartedAt: time.Now(), client: &cdpClient{ws: ws},
+		headless: shouldRunHeadless(), proxy: proxy,
 	}, nil
 }
 
 // launchLoginBrowser：用独立 profile 启动浏览器，并等待新的调试端口
-func launchLoginBrowser(browser, profileDir, id string, preset ChannelPreset) (*loginSession, error) {
+func launchLoginBrowser(browser, profileDir, id string, preset ChannelPreset, proxy string) (*loginSession, error) {
 	if err := os.MkdirAll(profileDir, 0o755); err != nil {
 		return nil, err
 	}
@@ -432,7 +454,9 @@ func launchLoginBrowser(browser, profileDir, id string, preset ChannelPreset) (*
 		// 无显示器环境先开 about:blank，等 UA 伪装完成后再导航到登录页
 		startURL = "about:blank"
 	}
-	args := buildLoginBrowserArgs(profileDir, startURL, headless, os.Geteuid() == 0)
+	// 记下这次用的出口代理，attachExisting 靠它判断能否复用已开的浏览器
+	_ = os.WriteFile(filepath.Join(profileDir, "login-proxy.txt"), []byte(proxy), 0o644)
+	args := buildLoginBrowserArgs(profileDir, startURL, headless, os.Geteuid() == 0, proxy)
 	cmd := exec.Command(browser, args...)
 	stderr, _ := cmd.StderrPipe()
 	if err := cmd.Start(); err != nil {
@@ -483,7 +507,7 @@ func launchLoginBrowser(browser, profileDir, id string, preset ChannelPreset) (*
 	session := &loginSession{
 		ID: id, Preset: preset.ID, LoginURL: preset.LoginURL, Browser: browser,
 		Port: port, StartedAt: time.Now(), client: &cdpClient{ws: ws}, proc: cmd,
-		headless: headless,
+		headless: headless, proxy: proxy,
 	}
 	if headless {
 		// 无显示器环境：about:blank 启动 → 伪装 UA → 再导航到登录页，
@@ -656,7 +680,7 @@ func shouldRunHeadless() bool {
 }
 
 // buildLoginBrowserArgs：构造受控浏览器启动参数
-func buildLoginBrowserArgs(profileDir, startURL string, headless, isRoot bool) []string {
+func buildLoginBrowserArgs(profileDir, startURL string, headless, isRoot bool, proxy string) []string {
 	args := []string{
 		"--remote-debugging-port=0",
 		"--user-data-dir=" + profileDir,
@@ -675,6 +699,11 @@ func buildLoginBrowserArgs(profileDir, startURL string, headless, isRoot bool) [
 	}
 	if headless {
 		args = append(args, "--headless=new", "--window-size=1180,860", "--hide-scrollbars", "--mute-audio", "--disable-gpu")
+	}
+	if server, err := proxyForBrowser(proxy); err == nil && server != "" {
+		// 站点按出口 IP 风控时（如 Genspark 直接 403 机房 IP），
+		// 登录浏览器必须走和 API 转发同一个出口
+		args = append(args, "--proxy-server="+server)
 	}
 	return args
 }

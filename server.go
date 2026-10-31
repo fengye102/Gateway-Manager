@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -368,11 +369,35 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request, kind endpoi
 		started := time.Now()
 		resp, ferr := s.forward(r.Context(), up, forwardKind, upstreamPath, payload, l.keyValue(), outcome.Headers)
 		if ferr != nil {
-			s.store.RecordFailure(l, 0, ferr.Error())
+			accountDead := errors.Is(ferr, errAccountUnavailable)
+			left := 0
+			if accountDead {
+				// 账号级不可用（额度耗尽 / 被站点封禁）：只冷却这个账号，
+				// 不计入上游级熔断——否则一个账号额度用完会把同渠道其他账号一起熔断。
+				coolFor := accountCooldown(ferr)
+				if coolFor <= 0 {
+					coolFor = time.Duration(cfg.Server.KeyCooldownSeconds) * time.Second
+				}
+				if coolFor <= 0 {
+					coolFor = 15 * time.Minute
+				}
+				left = s.store.CoolKey(l, coolFor, ferr.Error())
+			} else {
+				s.store.RecordFailure(l, 0, ferr.Error())
+			}
 			s.store.ObserveUpstream(up.ID, 0, time.Since(started))
+			label := l.keyLabel()
 			s.store.Release(l)
 			lastMessage = fmt.Sprintf("Upstream %s connection failed: %v", up.Name, ferr)
 			lastStatus = http.StatusBadGateway
+			if accountDead {
+				s.store.Warn("渠道 %s 账号 %s 不可用（%v），剩余可用账号 %d 个", up.Name, label, ferr, left)
+				if left > 0 && tries[up.ID] < limitFor(up) {
+					continue
+				}
+				exhaust(up)
+				continue
+			}
 			s.store.Error("上游 %s 连接失败：%v", up.Name, ferr)
 			if len(up.APIKeys) <= 1 {
 				exhaust(up)

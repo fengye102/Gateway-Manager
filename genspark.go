@@ -33,11 +33,11 @@ type gensparkClient struct {
 	HC     *http.Client
 }
 
-func newGensparkClient(cookie string, timeout time.Duration) *gensparkClient {
+func newGensparkClient(cookie string, timeout time.Duration, proxy string) *gensparkClient {
 	if timeout <= 0 {
 		timeout = 300 * time.Second
 	}
-	return &gensparkClient{Cookie: cookie, HC: &http.Client{Timeout: timeout}}
+	return &gensparkClient{Cookie: cookie, HC: httpClientWithProxy(timeout, proxy)}
 }
 
 func gensparkTrace() (string, string) {
@@ -226,7 +226,7 @@ func (s *Server) gensparkForward(ctx context.Context, ch Channel, preset Channel
 	body := buildGensparkBody(model, messages)
 	promptTokens := estimatePromptTokens(gensparkPromptText(messages))
 
-	client := newGensparkClient(cookie, 300*time.Second)
+	client := newGensparkClient(cookie, 300*time.Second, ch.Proxy)
 	resp, err := client.ask(ctx, base, body)
 	if err != nil {
 		return nil, err
@@ -240,7 +240,11 @@ func (s *Server) gensparkForward(ctx context.Context, ch Channel, preset Channel
 		var sb strings.Builder
 		result := parseGensparkStream(resp.Body, func(d string) { sb.WriteString(d) })
 		if result.Throttle != "" {
-			return nil, fmt.Errorf("Genspark 限流或额度不足：%s", result.Throttle)
+			// 积分耗尽属于账号级不可用（长冷却）；「问得太快」只是短时限流。
+			if strings.Contains(result.Throttle, gensparkCreditMark) {
+				return nil, &accountError{reason: "Genspark 额度不足：" + result.Throttle, cooldown: 30 * time.Minute}
+			}
+			return nil, &accountError{reason: "Genspark 限流：" + result.Throttle, cooldown: time.Minute}
 		}
 		if result.Failure != "" && sb.Len() == 0 && result.Content == "" {
 			return nil, fmt.Errorf("Genspark 上游报错：%s", result.Failure)

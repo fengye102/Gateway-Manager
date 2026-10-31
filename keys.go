@@ -76,6 +76,41 @@ func (p *keyPool) size() int {
 	return len(p.items)
 }
 
+// availableCount 统计当前不在冷却中的 key 数量（判断该账号池还有没有别号可切）
+func (p *keyPool) availableCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	now := time.Now()
+	n := 0
+	for _, it := range p.items {
+		if it.cooldownTill.IsZero() || !now.Before(it.cooldownTill) {
+			n++
+		}
+	}
+	return n
+}
+
+// cool 立即冷却某个 key：用于账号级不可用（额度耗尽 / 被站点封禁）。
+// 与 report 的区别是无需连续失败两次，也不看 HTTP 状态码——渠道适配器已经
+// 在响应体里识别出「积分用完」这类业务错误，必须当场换号。
+func (p *keyPool) cool(st *keyState, d time.Duration, reason string) {
+	if st == nil {
+		return
+	}
+	if d <= 0 {
+		d = 15 * time.Minute
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	st.lastUsed = time.Now()
+	st.lastStatus = 0
+	st.lastErr = reason
+	st.fails++
+	st.consecFails++
+	st.score = 0
+	st.cooldownTill = time.Now().Add(d)
+}
+
 func (p *keyPool) pick() (*keyState, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

@@ -468,6 +468,16 @@ func (s *Store) Release(l *lease) {
 	st.mu.Unlock()
 }
 
+// CoolKey 立即冷却当前 lease 上的账号（额度耗尽 / 被封），返回该账号池里
+// 还不处于冷却状态的账号数——大于 0 说明可以换号重试，等于 0 说明该渠道无号可用。
+func (s *Store) CoolKey(l *lease, d time.Duration, reason string) int {
+	if l == nil || l.pool == nil {
+		return 0
+	}
+	l.pool.cool(l.key, d, reason)
+	return l.pool.availableCount()
+}
+
 func (s *Store) RecordSuccess(l *lease, status int) {
 	if l == nil || l.up == nil {
 		return

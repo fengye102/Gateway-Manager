@@ -2132,6 +2132,12 @@ pre {
   font-variant-numeric: tabular-nums;
 }
 
+.account-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.4rem;
+}
+
 /* 远端登录画面（headless 场景） */
 .login-screen { margin-top: 10px; }
 .login-screen img {

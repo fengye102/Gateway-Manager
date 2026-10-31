@@ -407,19 +407,42 @@
               renderMeter(k.score, info.tone) +
             '</div>' +
             '<dl class="account-stats">' +
-              '<div><dt>请求</dt><dd>' + reqs + '</dd></div>' +
-              '<div><dt>成功率</dt><dd>' + rate + '</dd></div>' +
-              '<div><dt>延迟</dt><dd>' + latency + '</dd></div>' +
-              '<div><dt>冷却</dt><dd>' + (coolingLeft > 0 ? coolingLeft + 's' : '—') + '</dd></div>' +
+            '<div><dt>请求</dt><dd>' + reqs + '</dd></div>' +
+            '<div><dt>成功率</dt><dd>' + rate + '</dd></div>' +
+            '<div><dt>延迟</dt><dd>' + latency + '</dd></div>' +
+            '<div><dt>冷却</dt><dd>' + (coolingLeft > 0 ? coolingLeft + 's' : '—') + '</dd></div>' +
             '</dl>' +
-          '</article>'
+            '<div class="account-actions">' +
+            '<button type="button" class="btn danger-soft xs" data-del-key="' + esc(u.id || '') + '" data-key-idx="' + idx + '">移除此账号</button>' +
+            '</div>' +
+            '</article>'
         );
       });
     });
 
     grid.innerHTML = cards.join('');
+    grid.querySelectorAll('[data-del-key]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        removeChannelAccount(b.dataset.delKey, parseInt(b.dataset.keyIdx || '0', 10));
+      });
+    });
     const summary = $('accountPoolSummary');
     if (summary) summary.textContent = total + ' 个账号 · ' + activeUps + ' 个渠道';
+  }
+
+  function removeChannelAccount(upstreamId, index) {
+    const chId = String(upstreamId || '').replace(/^ch-/, '');
+    if (!chId) return;
+    if (!window.confirm('移除 ' + chId + ' 的第 ' + (index + 1) + ' 个账号？只删除这个账号的凭证，其他账号不受影响。')) return;
+    post('channels/key/delete', { id: chId, index: index }).then(function (r) {
+      if (r.ok) {
+        toast('账号已移除', '该渠道剩余 ' + (Number(r.body.key_count) || 0) + ' 个账号', 'success');
+        loadStatus();
+        loadChannels();
+      } else {
+        toast('移除账号失败', errMsg(r), 'error');
+      }
+    });
   }
 
   function renderStatus(d) {
@@ -734,7 +757,7 @@
           '<td class="mono fg-strong">' + esc(c.id) + '</td>' +
           '<td>' + esc(c.name) + '</td>' +
           '<td class="mono muted">' + esc(c.preset) + '</td>' +
-          '<td class="mono">' + esc(c.has_token ? c.token_masked : '未填写') + ((c.key_count || 0) > 1 ? ' <span class="chip soft">' + c.key_count + ' 个账号</span>' : '') + '</td>' +
+          '<td class="mono">' + esc(c.has_token ? c.token_masked : '未填写') + ((c.key_count || 0) > 1 ? ' <span class="chip soft">' + c.key_count + ' 个账号</span>' : '') + (c.proxy ? ' <span class="chip soft mono" title="出口代理">' + esc(c.proxy) + '</span>' : '') + '</td>' +
           '<td>' + (c.enabled ? '<span class="chip success">已启用</span>' : '<span class="chip soft">已停用</span>') + '</td>' +
           '<td class="num mono">' + (c.priority || 0) + '</td>' +
           '<td class="num mono">' + (c.weight || 0) + '</td>' +
@@ -800,16 +823,19 @@
         { name: 'id', label: '渠道 ID', defaultValue: presetId, placeholder: presetId },
         { name: 'name', label: '显示名称', defaultValue: preset.name || presetId, placeholder: '自定义名称' },
         { name: 'token', label: '访问凭证 (Token / Cookie)', defaultValue: '', placeholder: '粘贴 Bearer Token 或完整 Cookie' },
+        { name: 'proxy', label: '出口代理（留空=服务器直连）', defaultValue: lastChannelProxy(), placeholder: 'socks5://127.0.0.1:1080' },
         { name: 'priority', label: '路由优先级（数字越小越优先）', type: 'number', defaultValue: '0' },
         { name: 'weight', label: '同级分流权重（0 为均分）', type: 'number', defaultValue: '0' }
       ]
     }).then(function (vals) {
       if (!vals) return;
+      saveChannelProxy(vals.proxy);
       post('channels', {
         preset: presetId,
         id: (vals.id || presetId).trim(),
         name: (vals.name || '').trim(),
         token: (vals.token || 'public').trim(),
+        proxy: (vals.proxy || '').trim(),
         priority: parseInt(vals.priority || '0', 10) || 0,
         weight: parseInt(vals.weight || '0', 10) || 0
       }).then(function (r) {
@@ -824,8 +850,36 @@
     });
   }
 
+  function lastChannelProxy() {
+    try { return localStorage.getItem('gm-channel-proxy') || ''; } catch (e) { return ''; }
+  }
+
+  function saveChannelProxy(v) {
+    try {
+      if (v && v.trim()) localStorage.setItem('gm-channel-proxy', v.trim());
+      else localStorage.removeItem('gm-channel-proxy');
+    } catch (e) { /* 隐私模式下忽略 */ }
+  }
+
   function startChannelLogin(presetId) {
-    post('channels/login/start', { preset: presetId }).then(function (r) {
+    const known = (state.channels.channels || []).find(function (c) { return c.id === presetId; });
+    formModal({
+      title: '网页登录 · ' + presetId,
+      description: '站点按出口 IP 风控时（如 Genspark 会直接 403 机房 IP），登录浏览器和后续 API 转发必须走同一个出口，否则登录成功后一问就失败。留空则用服务器本机网络。',
+      confirmText: '启动登录',
+      fields: [
+        { name: 'proxy', label: '出口代理（留空=服务器直连）', defaultValue: (known && known.proxy) || lastChannelProxy(), placeholder: 'socks5://127.0.0.1:1080' }
+      ]
+    }).then(function (vals) {
+      if (!vals) return;
+      const proxy = (vals.proxy || '').trim();
+      saveChannelProxy(proxy);
+      launchChannelLogin(presetId, proxy);
+    });
+  }
+
+  function launchChannelLogin(presetId, proxy) {
+    post('channels/login/start', { preset: presetId, proxy: proxy }).then(function (r) {
       if (!r.ok) {
         toast('启动网页登录失败', errMsg(r), 'error');
         return;
@@ -834,7 +888,10 @@
       $('loginPanel').hidden = false;
       $('loginTitle').textContent = '网页登录：' + presetId;
       const remote = !!r.body.remote_view;
-      $('loginHint').textContent = (r.body.login_hint ? r.body.login_hint + ' · ' : '') + '已通过 ' + (r.body.browser || 'Chromium') + ' 打开登录窗口' + (remote ? '（服务器无显示器，画面已内嵌到下方，直接点击操作）' : '');
+      const existing = Number(r.body.existing_accounts || 0);
+      const proxyNote = r.body.proxy ? '，出口代理 ' + r.body.proxy : '';
+      $('loginHint').textContent = (r.body.login_hint ? r.body.login_hint + ' · ' : '') + '已通过 ' + (r.body.browser || 'Chromium') + ' 打开登录窗口' + (remote ? '（服务器无显示器，画面已内嵌到下方，直接点击操作）' : '') + proxyNote +
+        (existing > 0 ? '；该渠道已有 ' + existing + ' 个账号，本次登录保存后将成为第 ' + (existing + 1) + ' 个，请求自动轮转' : '');
       $('loginStatus').textContent = '等待浏览器登录完成...';
       $('loginScreenWrap').hidden = !remote;
       if (loginState.timer) clearInterval(loginState.timer);
