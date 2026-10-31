@@ -137,3 +137,23 @@ func TestKeyPoolCoolAndAvailable(t *testing.T) {
 		t.Fatal("所有账号冷却中时不应再出号")
 	}
 }
+
+func TestKeyPoolSpreadsAcrossAccounts(t *testing.T) {
+	// 新加的账号必须立即参与轮转，而不是被满分的健康账号永远压住
+	pool := newKeyPool([]string{"acc-a", "acc-b"}, "score", 30*time.Second)
+	used := map[string]int{}
+	for i := 0; i < 6; i++ {
+		st, ok := pool.pick()
+		if !ok {
+			t.Fatalf("第 %d 次取号失败", i)
+		}
+		used[st.key]++
+		pool.report(st, 200, 10*time.Millisecond, "")
+	}
+	if used["acc-a"] == 0 || used["acc-b"] == 0 {
+		t.Fatalf("两个账号都应被用到，实际分布 %v", used)
+	}
+	if used["acc-a"] != 3 || used["acc-b"] != 3 {
+		t.Fatalf("6 次请求应均分到两个账号，实际 %v", used)
+	}
+}

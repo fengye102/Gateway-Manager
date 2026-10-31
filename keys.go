@@ -143,7 +143,13 @@ func (p *keyPool) pick() (*keyState, bool) {
 		p.rr++
 		chosen = available[int(p.rr)%len(available)]
 	} else {
+		// score 策略：先按「已服务请求数」最少优先，再比健康分，最后比闲置时间。
+		// 只按分数排会让新加的账号永远抢不过满分的健康账号（新号初始分低于满分），
+		// 表现为「配了多个账号但请求永远只打第一个」——这正是轮转不起来的根因。
 		sort.SliceStable(available, func(i, j int) bool {
+			if available[i].requests != available[j].requests {
+				return available[i].requests < available[j].requests
+			}
 			if available[i].score != available[j].score {
 				return available[i].score > available[j].score
 			}

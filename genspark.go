@@ -119,10 +119,17 @@ func (c *gensparkClient) ask(ctx context.Context, base string, body []byte) (*ht
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		resp.Body.Close()
 		switch resp.StatusCode {
-		case 401, 403:
-			return nil, fmt.Errorf("Genspark 登录态无效或被 Cloudflare 拦截（HTTP %d），请重新网页登录", resp.StatusCode)
+		case 401:
+			return nil, &accountError{reason: "Genspark 登录态已失效（HTTP 401），请重新网页登录", cooldown: 30 * time.Minute}
+		case 403:
+			// 可能是账号被风控，也可能是出口代理本身被拦：冷却短一些，先换号再试
+			return nil, &accountError{reason: "Genspark 返回 HTTP 403（账号被风控或出口 IP 被拦）", cooldown: 10 * time.Minute}
 		case 429:
-			return nil, fmt.Errorf("Genspark 限流，请稍后重试")
+			return nil, &accountError{reason: "Genspark 限流，请稍后重试", cooldown: time.Minute}
+		}
+		// Cloudflare 在 cookie 失效时常回 400 "bad request cf"：同样属于账号级问题
+		if resp.StatusCode == 400 && strings.Contains(strings.ToLower(string(raw)), "cf") {
+			return nil, &accountError{reason: "Genspark 拒绝了该账号的会话（HTTP 400 cf），请重新网页登录", cooldown: 30 * time.Minute}
 		}
 		return nil, fmt.Errorf("Genspark 返回 HTTP %d：%s", resp.StatusCode, truncateForReport(string(raw), 200))
 	}
