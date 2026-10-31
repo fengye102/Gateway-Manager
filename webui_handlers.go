@@ -780,6 +780,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 			Preset string `json:"preset"`
 			ID     string `json:"id"`
 			Proxy  string `json:"proxy"`
+			Fresh  bool   `json:"fresh"` // 全新窗口：一次性 profile，看不到旧登录态
 		}
 		if err := s.readJSONBody(r, &payload); err != nil {
 			proxyError(w, http.StatusBadRequest, err.Error())
@@ -795,7 +796,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 			id = preset.ID
 		}
 		profileRoot := profileRootDefault()
-		session, err := newLoginSession(id, preset, profileRoot, payload.Proxy)
+		session, err := newLoginSession(id, preset, profileRoot, payload.Proxy, payload.Fresh)
 		if err != nil {
 			proxyError(w, http.StatusBadRequest, err.Error())
 			return
@@ -818,7 +819,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 			"login_url": preset.LoginURL, "login_hint": preset.LoginHint,
 			"browser": session.Browser, "port": session.Port,
 			"remote_view": session.headless, "proxy": session.proxy,
-			"existing_accounts": existing,
+			"existing_accounts": existing, "fresh": payload.Fresh,
 		})
 
 	case "channels/login/screen":

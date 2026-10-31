@@ -925,13 +925,13 @@
     });
   }
 
-  // 给已有渠道追加第 N+1 个账号：登录成功保存时自动并入该渠道账号池
+  // 给已有渠道追加第 N+1 个账号：全新无痕 profile（微软等站点看不到旧账号），保存后并入账号池
   function launchChannelLoginFlow(presetId, proxy, titleSuffix) {
-    launchChannelLogin(presetId, proxy, titleSuffix);
+    launchChannelLogin(presetId, proxy, titleSuffix, true);
   }
 
-  function launchChannelLogin(presetId, proxy, titleSuffix) {
-    post('channels/login/start', { preset: presetId, proxy: proxy }).then(function (r) {
+  function launchChannelLogin(presetId, proxy, titleSuffix, fresh) {
+    post('channels/login/start', { preset: presetId, proxy: proxy, fresh: !!fresh }).then(function (r) {
       if (!r.ok) {
         toast('启动网页登录失败', errMsg(r), 'error');
         return;
@@ -942,7 +942,8 @@
       const remote = !!r.body.remote_view;
       const existing = Number(r.body.existing_accounts || 0);
       const proxyNote = r.body.proxy ? '，出口代理 ' + r.body.proxy : '';
-      $('loginHint').textContent = (r.body.login_hint ? r.body.login_hint + ' · ' : '') + '已通过 ' + (r.body.browser || 'Chromium') + ' 打开登录窗口' + (remote ? '（服务器无显示器，画面已内嵌到下方，直接点击操作）' : '') + proxyNote +
+      const freshNote = r.body.fresh ? '（全新无痕窗口，不含以前的登录账号） · ' : '';
+      $('loginHint').textContent = freshNote + (r.body.login_hint ? r.body.login_hint + ' · ' : '') + '已通过 ' + (r.body.browser || 'Chromium') + ' 打开登录窗口' + (remote ? '（服务器无显示器，画面已内嵌到下方，直接点击操作）' : '') + proxyNote +
         (existing > 0 ? '；该渠道已有 ' + existing + ' 个账号，本次登录保存后将成为第 ' + (existing + 1) + ' 个，请求自动轮转' : '');
       $('loginStatus').textContent = '等待浏览器登录完成...';
       $('loginScreenWrap').hidden = !remote;

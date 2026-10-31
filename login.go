@@ -283,6 +283,7 @@ type loginSession struct {
 	headless   bool   // 无显示器环境下以 headless 模式运行，画面由控制台远端呈现
 	proxy      string // 启动时使用的出口代理，登录完成后随凭证一起写入渠道
 	profileDir string // 本次登录使用的 user-data-dir，退出时按它清掉残留进程
+	ephemeral  bool   // 全新窗口（一次性 profile）：会话结束即焚，不留下任何登录态
 }
 
 var findBrowserFunc = findChromiumBrowser
@@ -351,7 +352,7 @@ func findChromiumBrowser() (string, bool) {
 	return "", false
 }
 
-func newLoginSession(id string, preset ChannelPreset, profileRoot, proxy string) (*loginSession, error) {
+func newLoginSession(id string, preset ChannelPreset, profileRoot, proxy string, fresh bool) (*loginSession, error) {
 	browser, ok := findBrowserFunc()
 	if !ok {
 		return nil, fmt.Errorf("未找到 Chrome / Edge / Chromium，无法网页登录（可改用手动粘贴凭证）")
@@ -373,19 +374,27 @@ func newLoginSession(id string, preset ChannelPreset, profileRoot, proxy string)
 		return nil, err
 	}
 
-	// 1) 若该 profile 已经有可用的调试实例（浏览器还开着），直接复用
-	if session, err := attachExisting(profileRoot, id, preset, proxy); err == nil && session != nil {
-		return session, nil
+	freshSuffix := ""
+	if fresh {
+		// 全新窗口：不复用旧会话/旧 profile，微软等站点看不到上一个账号的登录态
+		freshSuffix = "-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	}
+
+	// 1) 若该 profile 已经有可用的调试实例（浏览器还开着），直接复用；全新窗口例外
+	if !fresh {
+		if session, err := attachExisting(profileRoot, id, preset, proxy); err == nil && session != nil {
+			return session, nil
+		}
 	}
 
 	// 2) 正常启动；失败时换一个全新 profile 再试一次
 	attempts := []string{
-		filepath.Join(profileRoot, "login-"+id),
+		filepath.Join(profileRoot, "login-"+id+freshSuffix),
 		filepath.Join(profileRoot, "login-"+id+"-"+strconv.FormatInt(time.Now().UnixNano(), 36)),
 	}
 	var lastErr error
 	for i, profileDir := range attempts {
-		session, err := launchLoginBrowser(browser, profileDir, id, preset, proxy)
+		session, err := launchLoginBrowser(browser, profileDir, id, preset, proxy, fresh)
 		if err == nil {
 			return session, nil
 		}
@@ -401,7 +410,7 @@ func newLoginSession(id string, preset ChannelPreset, profileRoot, proxy string)
 }
 
 // attachExisting：profile 里已有活着的调试端口就直接接上（浏览器当前开着）
-func attachExisting(profileRoot, id string, preset ChannelPreset, proxy string) (*loginSession, error) {
+func attachExisting(profileRoot, id string, preset ChannelPreset, proxy string) (*loginSession, error) { // 复用型 profile，永不即焚
 	profileDir := filepath.Join(profileRoot, "login-"+id)
 	// 出口代理变了就不能复用旧浏览器：cf_clearance 之类 cookie 绑定出口 IP，
 	// 复用会拿到一个「登录成功但一问就 403」的会话。
@@ -438,7 +447,7 @@ func attachExisting(profileRoot, id string, preset ChannelPreset, proxy string) 
 }
 
 // launchLoginBrowser：用独立 profile 启动浏览器，并等待新的调试端口
-func launchLoginBrowser(browser, profileDir, id string, preset ChannelPreset, proxy string) (*loginSession, error) {
+func launchLoginBrowser(browser, profileDir, id string, preset ChannelPreset, proxy string, ephemeral bool) (*loginSession, error) {
 	if err := os.MkdirAll(profileDir, 0o755); err != nil {
 		return nil, err
 	}
@@ -515,7 +524,7 @@ func launchLoginBrowser(browser, profileDir, id string, preset ChannelPreset, pr
 	session := &loginSession{
 		ID: id, Preset: preset.ID, LoginURL: preset.LoginURL, Browser: browser,
 		Port: port, StartedAt: time.Now(), client: &cdpClient{ws: ws}, proc: cmd,
-		headless: headless, proxy: proxy, profileDir: profileDir,
+		headless: headless, proxy: proxy, profileDir: profileDir, ephemeral: ephemeral,
 	}
 	if headless {
 		// 无显示器环境：about:blank 启动 → 伪装 UA → 再导航到登录页，
@@ -954,5 +963,10 @@ func (s *loginSession) closeSession() {
 	// 杀进程组漏得掉——按 user-data-dir 扫 /proc 兜底。
 	if s.profileDir != "" {
 		killProfileProcesses(s.profileDir)
+		// 一次性 profile（全新窗口登录）：抓完凭证就没用了，整个删掉，
+		// 避免旧账号 Cookie 留在本机，也避免下次登录又看到上次的账号
+		if s.ephemeral {
+			_ = os.RemoveAll(s.profileDir)
+		}
 	}
 }
