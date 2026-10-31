@@ -430,6 +430,40 @@
     if (summary) summary.textContent = total + ' 个账号 · ' + activeUps + ' 个渠道';
   }
 
+  function openAppendAccountModal(chId) {
+    const ch = (state.channels.channels || []).find(function (c) { return c.id === chId; });
+    if (!ch) { toast('未找到渠道', chId, 'error'); return; }
+    formModal({
+      title: '添加账号 · ' + (ch.name || chId),
+      description: '新账号加入「' + chId + '」的账号池（当前 ' + (ch.key_count || 1) + ' 个账号），请求自动轮转；不影响已有账号。同站按 IP 风控时填和渠道一致的出口代理。',
+      confirmText: '添加账号',
+      fields: [
+        { name: 'token', label: '新账号凭证 (Token / Cookie)', defaultValue: '', placeholder: '粘贴这个账号的 Token 或完整 Cookie' },
+        { name: 'proxy', label: '出口代理（留空=沿用渠道当前设置' + (ch.proxy ? '：' + ch.proxy : '') + '）', defaultValue: ch.proxy || lastChannelProxy(), placeholder: 'socks5://127.0.0.1:1080' }
+      ]
+    }).then(function (vals) {
+      if (!vals) return;
+      const token = (vals.token || '').trim();
+      if (!token) { toast('凭证不能为空', '请粘贴新账号的 Token / Cookie', 'error'); return; }
+      saveChannelProxy(vals.proxy);
+      post('channels', {
+        id: chId,
+        preset: ch.preset,
+        token: token,
+        proxy: (vals.proxy || '').trim(),
+        append_key: true
+      }).then(function (r) {
+        if (r.ok) {
+          toast('账号已添加', '渠道 ' + chId + ' 现有 ' + (Number(r.body.key_count) || '?') + ' 个账号，自动参与轮转', 'success');
+          loadStatus();
+          loadChannels();
+        } else {
+          toast('添加账号失败', errMsg(r), 'error');
+        }
+      });
+    });
+  }
+
   function removeChannelAccount(upstreamId, index) {
     const chId = String(upstreamId || '').replace(/^ch-/, '');
     if (!chId) return;
@@ -763,12 +797,16 @@
           '<td class="num mono">' + (c.weight || 0) + '</td>' +
           '<td class="mono muted">' + esc((c.models || []).join(', ') || '模板默认') + '</td>' +
           '<td><div class="row-actions">' +
+            '<button type="button" class="btn primary xs" data-add-key="' + esc(c.id) + '">添加账号</button>' +
             '<button type="button" class="btn outline xs" data-test-channel="' + esc(c.id) + '">探活</button>' +
             '<button type="button" class="btn danger-soft xs" data-del-channel="' + esc(c.id) + '">删除</button>' +
           '</div></td>' +
         '</tr>';
       }).join('');
 
+      cbody.querySelectorAll('[data-add-key]').forEach(function (b) {
+        b.addEventListener('click', function () { openAppendAccountModal(b.dataset.addKey); });
+      });
       cbody.querySelectorAll('[data-test-channel]').forEach(function (b) {
         b.addEventListener('click', function () { testChannel(b.dataset.testChannel); });
       });

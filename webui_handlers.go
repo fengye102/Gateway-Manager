@@ -508,17 +508,18 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 			return
 		}
 		var payload struct {
-			ID       string            `json:"id"`
-			Preset   string            `json:"preset"`
-			Name     string            `json:"name"`
-			Token    string            `json:"token"`
-			BaseURL  string            `json:"base_url"`
-			Models   []string          `json:"models"`
-			Headers  map[string]string `json:"headers"`
-			Proxy    string            `json:"proxy"`
-			Priority int               `json:"priority"`
-			Weight   int               `json:"weight"`
-			Enabled  *bool             `json:"enabled"`
+			ID        string            `json:"id"`
+			Preset    string            `json:"preset"`
+			Name      string            `json:"name"`
+			Token     string            `json:"token"`
+			BaseURL   string            `json:"base_url"`
+			Models    []string          `json:"models"`
+			Headers   map[string]string `json:"headers"`
+			Proxy     string            `json:"proxy"`
+			Priority  int               `json:"priority"`
+			Weight    int               `json:"weight"`
+			Enabled   *bool             `json:"enabled"`
+			AppendKey bool              `json:"append_key"` // true=向已有渠道追加账号，而不是替换主凭证
 		}
 		if err := s.readJSONBody(r, &payload); err != nil {
 			proxyError(w, http.StatusBadRequest, err.Error())
@@ -539,6 +540,49 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 			if next.Channels[i].ID == id {
 				found = true
 				ch := &next.Channels[i]
+				if payload.AppendKey {
+					// 追加账号模式：凭证进 Key 池参与轮转，主凭证与模型列表保持不变
+					key := strings.TrimSpace(payload.Token)
+					if key == "" {
+						proxyError(w, http.StatusBadRequest, "新账号凭证不能为空")
+						return
+					}
+					if key == ch.Token {
+						proxyError(w, http.StatusBadRequest, "该账号已存在于渠道中（当前主账号）")
+						return
+					}
+					for _, t := range ch.Tokens {
+						if t == key {
+							proxyError(w, http.StatusBadRequest, "该账号已存在于渠道中")
+							return
+						}
+					}
+					if strings.TrimSpace(ch.Token) == "" {
+						ch.Token = key
+						if _, isCookiePreset := channelAdapters[ch.Preset]; isCookiePreset {
+							ch.Cookie = key
+						}
+					} else {
+						ch.Tokens = append(ch.Tokens, key)
+					}
+					if strings.TrimSpace(payload.Proxy) != "" {
+						norm, perr := normalizeProxy(payload.Proxy)
+						if perr != nil {
+							proxyError(w, http.StatusBadRequest, perr.Error())
+							return
+						}
+						ch.Proxy = norm
+					}
+					s.autoSnapshot("before-channel-key-append")
+					if err := s.saveConfigAndReload(next); err != nil {
+						proxyError(w, http.StatusBadRequest, err.Error())
+						return
+					}
+					remaining := len(channelKeys(*ch))
+					s.store.Info("渠道 %s 追加了一个账号，现有 %d 个账号", id, remaining)
+					writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": id, "appended": true, "key_count": remaining})
+					return
+				}
 				ch.Preset = payload.Preset
 				if payload.Name != "" {
 					ch.Name = payload.Name
