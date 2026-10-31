@@ -1005,6 +1005,19 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, action stri
 
 	case "channels/login/cancel":
 		id := strings.TrimSpace(r.URL.Query().Get("id"))
+		if id == "" {
+			// 控制台/脚本也可能把 id 放在 JSON body 里，两种都要认
+			var payload struct {
+				ID string `json:"id"`
+			}
+			if err := s.readJSONBody(r, &payload); err == nil {
+				id = strings.TrimSpace(payload.ID)
+			}
+		}
+		if id == "" {
+			proxyError(w, http.StatusBadRequest, "缺少 id")
+			return
+		}
 		s.loginMu.Lock()
 		session := s.logins[id]
 		delete(s.logins, id)

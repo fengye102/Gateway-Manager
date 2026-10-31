@@ -270,18 +270,19 @@ type cdpCookie struct {
 // ---------- 浏览器登录会话 ----------
 
 type loginSession struct {
-	ID        string    `json:"id"`
-	Preset    string    `json:"preset"`
-	LoginURL  string    `json:"login_url"`
-	Browser   string    `json:"browser"`
-	Port      int       `json:"port"`
-	StartedAt time.Time `json:"started_at"`
-	closed    bool
-	client    *cdpClient
-	proc      *exec.Cmd
-	mu        sync.Mutex
-	headless  bool   // 无显示器环境下以 headless 模式运行，画面由控制台远端呈现
-	proxy     string // 启动时使用的出口代理，登录完成后随凭证一起写入渠道
+	ID         string    `json:"id"`
+	Preset     string    `json:"preset"`
+	LoginURL   string    `json:"login_url"`
+	Browser    string    `json:"browser"`
+	Port       int       `json:"port"`
+	StartedAt  time.Time `json:"started_at"`
+	closed     bool
+	client     *cdpClient
+	proc       *exec.Cmd
+	mu         sync.Mutex
+	headless   bool   // 无显示器环境下以 headless 模式运行，画面由控制台远端呈现
+	proxy      string // 启动时使用的出口代理，登录完成后随凭证一起写入渠道
+	profileDir string // 本次登录使用的 user-data-dir，退出时按它清掉残留进程
 }
 
 var findBrowserFunc = findChromiumBrowser
@@ -432,7 +433,7 @@ func attachExisting(profileRoot, id string, preset ChannelPreset, proxy string) 
 	return &loginSession{
 		ID: id, Preset: preset.ID, LoginURL: preset.LoginURL, Browser: "已运行的浏览器进程",
 		Port: port, StartedAt: time.Now(), client: &cdpClient{ws: ws},
-		headless: shouldRunHeadless(), proxy: proxy,
+		headless: shouldRunHeadless(), proxy: proxy, profileDir: profileDir,
 	}, nil
 }
 
@@ -458,10 +459,17 @@ func launchLoginBrowser(browser, profileDir, id string, preset ChannelPreset, pr
 	_ = os.WriteFile(filepath.Join(profileDir, "login-proxy.txt"), []byte(proxy), 0o644)
 	args := buildLoginBrowserArgs(profileDir, startURL, headless, os.Geteuid() == 0, proxy)
 	cmd := exec.Command(browser, args...)
+	if runtime.GOOS != "windows" {
+		// 单独进程组：Chromium 会派生一堆渲染/GPU 子进程，
+		// 只 kill 主进程会留下一整组孤儿进程继续吃内存、占着 profile
+		cmd.SysProcAttr = sysProcAttrSetpgid()
+	}
 	stderr, _ := cmd.StderrPipe()
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("启动浏览器失败：%v", err)
 	}
+	// 必须有人回收子进程，否则被杀掉的浏览器会留下 defunct 僵尸进程
+	go func() { _ = cmd.Wait() }()
 
 	var port int
 	var wsPath string
@@ -507,7 +515,7 @@ func launchLoginBrowser(browser, profileDir, id string, preset ChannelPreset, pr
 	session := &loginSession{
 		ID: id, Preset: preset.ID, LoginURL: preset.LoginURL, Browser: browser,
 		Port: port, StartedAt: time.Now(), client: &cdpClient{ws: ws}, proc: cmd,
-		headless: headless, proxy: proxy,
+		headless: headless, proxy: proxy, profileDir: profileDir,
 	}
 	if headless {
 		// 无显示器环境：about:blank 启动 → 伪装 UA → 再导航到登录页，
@@ -940,6 +948,11 @@ func (s *loginSession) closeSession() {
 		s.client.ws.close()
 	}
 	if s.proc != nil && s.proc.Process != nil {
-		_ = s.proc.Process.Kill()
+		killProcessTree(s.proc)
+	}
+	// snap 版 Chromium 跑在独立 systemd scope 里，crashpad 等子进程自成进程组，
+	// 杀进程组漏得掉——按 user-data-dir 扫 /proc 兜底。
+	if s.profileDir != "" {
+		killProfileProcesses(s.profileDir)
 	}
 }
