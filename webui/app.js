@@ -433,18 +433,27 @@
   function openAppendAccountModal(chId) {
     const ch = (state.channels.channels || []).find(function (c) { return c.id === chId; });
     if (!ch) { toast('未找到渠道', chId, 'error'); return; }
+    const preset = (state.channels.presets || []).find(function (p) { return p.id === ch.preset; }) || {};
+    const n = (ch.key_count || 1);
+    const nLabel = '第 ' + (n + 1) + ' 个账号';
+    // 有独立登录页的渠道（genspark/runable 等）：凭证券没得复制，只能开浏览器登录抓号
+    if (preset.login_url) {
+      startChannelLogin(ch.preset, preset, nLabel);
+      return;
+    }
+    // 纯 Token 渠道：粘贴凭证直接入池
     formModal({
       title: '添加账号 · ' + (ch.name || chId),
-      description: '新账号加入「' + chId + '」的账号池（当前 ' + (ch.key_count || 1) + ' 个账号），请求自动轮转；不影响已有账号。同站按 IP 风控时填和渠道一致的出口代理。',
+      description: '给「' + chId + '」追加 ' + nLabel + '（当前 ' + n + ' 个），保存后立即参与轮转；不影响已有账号。',
       confirmText: '添加账号',
       fields: [
-        { name: 'token', label: '新账号凭证 (Token / Cookie)', defaultValue: '', placeholder: '粘贴这个账号的 Token 或完整 Cookie' },
+        { name: 'token', label: '新账号凭证 (Token / API Key)', defaultValue: '', placeholder: '粘贴这个账号的 Token 或 API Key' },
         { name: 'proxy', label: '出口代理（留空=沿用渠道当前设置' + (ch.proxy ? '：' + ch.proxy : '') + '）', defaultValue: ch.proxy || lastChannelProxy(), placeholder: 'socks5://127.0.0.1:1080' }
       ]
     }).then(function (vals) {
       if (!vals) return;
       const token = (vals.token || '').trim();
-      if (!token) { toast('凭证不能为空', '请粘贴新账号的 Token / Cookie', 'error'); return; }
+      if (!token) { toast('凭证不能为空', '请粘贴新账号的 Token / API Key', 'error'); return; }
       saveChannelProxy(vals.proxy);
       post('channels', {
         id: chId,
@@ -899,10 +908,10 @@
     } catch (e) { /* 隐私模式下忽略 */ }
   }
 
-  function startChannelLogin(presetId) {
+  function startChannelLogin(presetId, preset, titleSuffix) {
     const known = (state.channels.channels || []).find(function (c) { return c.id === presetId; });
     formModal({
-      title: '网页登录 · ' + presetId,
+      title: '网页登录 · ' + (titleSuffix ? titleSuffix + ' · ' : '') + (preset && preset.name || presetId),
       description: '站点按出口 IP 风控时（如 Genspark 会直接 403 机房 IP），登录浏览器和后续 API 转发必须走同一个出口，否则登录成功后一问就失败。留空则用服务器本机网络。',
       confirmText: '启动登录',
       fields: [
@@ -912,11 +921,16 @@
       if (!vals) return;
       const proxy = (vals.proxy || '').trim();
       saveChannelProxy(proxy);
-      launchChannelLogin(presetId, proxy);
+      launchChannelLoginFlow(presetId, proxy, titleSuffix || '');
     });
   }
 
-  function launchChannelLogin(presetId, proxy) {
+  // 给已有渠道追加第 N+1 个账号：登录成功保存时自动并入该渠道账号池
+  function launchChannelLoginFlow(presetId, proxy, titleSuffix) {
+    launchChannelLogin(presetId, proxy, titleSuffix);
+  }
+
+  function launchChannelLogin(presetId, proxy, titleSuffix) {
     post('channels/login/start', { preset: presetId, proxy: proxy }).then(function (r) {
       if (!r.ok) {
         toast('启动网页登录失败', errMsg(r), 'error');
@@ -924,7 +938,7 @@
       }
       loginState.id = r.body.id;
       $('loginPanel').hidden = false;
-      $('loginTitle').textContent = '网页登录：' + presetId;
+      $('loginTitle').textContent = '网页登录：' + presetId + (titleSuffix || '');
       const remote = !!r.body.remote_view;
       const existing = Number(r.body.existing_accounts || 0);
       const proxyNote = r.body.proxy ? '，出口代理 ' + r.body.proxy : '';
